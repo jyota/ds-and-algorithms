@@ -9,7 +9,8 @@ typedef struct list {
   struct list *next;
 } list;
 
-// My recursive singly linked list reverse implementation
+// Algorithm design manual problem 3.23 
+// (my recursive implementation)
 list *reverse_list_recursive(list *l, list *previous)
 {
   list *next;
@@ -18,6 +19,31 @@ list *reverse_list_recursive(list *l, list *previous)
   next = l->next;
   l->next = previous;
   return(reverse_list_recursive(next, l));
+}
+
+
+// Algorithm Design Manual problem 3.20
+// in my slightly modified implementation below (compared to the solutions wiki), 
+// if there is an even number of items,
+// return the item just before the middle instead of after the middle.
+list *find_middle(list *l)
+{
+  int i = 0;
+  list *middle;
+  list *current;
+  if(l == NULL || l->next == NULL){
+    return(l);
+  }
+  middle = l;
+  current = l;
+  while(current != NULL){
+    current = current->next;
+    ++i;
+    if(i % 2 == 0 && current != NULL){
+      middle = middle->next;
+    }
+  }
+  return(middle);
 }
 
 // My traverse singly-linked list and print implementation
@@ -118,12 +144,25 @@ int main()
   insert_list(&mylist, 2);  
   insert_list(&mylist, 1);
 
-  mylist = reverse_list_recursive(mylist, NULL);
-  print_traverse(&mylist);
-
   reverse_list(&mylist);
   print_traverse(&mylist);
 
+  mylist = reverse_list_recursive(mylist, NULL);
+  print_traverse(&mylist);
+
+  list *mymiddle = find_middle(mylist);
+  print_traverse(&mymiddle);
+
+  // check for a 5 item list
+  mylist->item = 5;
+  mylist->next = NULL;
+  insert_list(&mylist, 4);
+  insert_list(&mylist, 3);  
+  insert_list(&mylist, 2);  
+  insert_list(&mylist, 1);  
+  print_traverse(&mylist);
+  mymiddle = find_middle(mylist);
+  print_traverse(&mymiddle);
 
   return 0; 
 }
