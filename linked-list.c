@@ -11,6 +11,8 @@ typedef struct list {
 
 // Algorithm design manual problem 3.23 
 // (my recursive implementation)
+// this is kind of 'iterative' masquerading as recursive, 
+// see next function for 'pure recursive'
 list *reverse_list_recursive(list *l, list *previous)
 {
   list *next;
@@ -19,6 +21,18 @@ list *reverse_list_recursive(list *l, list *previous)
   next = l->next;
   l->next = previous;
   return(reverse_list_recursive(next, l));
+}
+
+// pure recursive form, lifted from:
+// https://stackoverflow.com/questions/14080758/reversing-a-linkedlist-recursively-in-c
+list *reverse_pure_recursive(list *l)
+{
+  if(l != NULL && l->next == NULL) return(l);
+
+  list *working_list = reverse_pure_recursive(l->next);
+  l->next->next = l;
+  l->next = NULL;
+  return(working_list);
 }
 
 
@@ -148,6 +162,9 @@ int main()
   print_traverse(&mylist);
 
   mylist = reverse_list_recursive(mylist, NULL);
+  print_traverse(&mylist);
+
+  mylist = reverse_pure_recursive(mylist);
   print_traverse(&mylist);
 
   list *mymiddle = find_middle(mylist);
