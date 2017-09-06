@@ -274,12 +274,66 @@ void linked_list_tests()
 
   move_after_t_to_after_x(mylistcopy->next, mylistcopy->next->next->next->next->next);
   print_traverse_circular(&mylistcopy, 5);
+  printf("\n");
 }
 
-int main()
+// Sedgewick Algorithms in C exercise 3.33 solution
+void josephus_problem_linked_list_array(int N, int M)
+{
+  int i;
+  int item[N];
+  int next[N];
+
+  for(i = 0; i < N; ++i){
+    item[i] = i + 1;
+    next[i] = (i + 1) == N ? 0 : i + 1;
+  }
+
+  int next_item = 0;
+  int prev_item = 0;
+  while(next[next_item] != prev_item){
+    for(i = 0; i < M; ++i){
+      if(i == M - 2) prev_item = item[next_item] - 1;
+      next_item = next[next_item];
+    }
+    next[prev_item] = next_item;
+  }
+  printf("Josephus linked list array result: %d\n", item[next[next_item]]);
+}
+
+void josephus_problem_linked_list(int N, int M)
+{
+  int i;
+  list *t = malloc(sizeof(list));
+  list *x = t;
+
+  t->item = 1; 
+  t->next = t;
+
+  for(i = 2; i <= N; ++i){
+    x->next = malloc(sizeof(list));
+    x = x->next;
+    x->item = i;
+    x->next = t;
+  }
+
+  while(x != x->next){
+    for(i = 1; i < M; ++i){
+      x = x->next;
+    }
+    x->next = x->next->next;
+  }
+  printf("Josephus linked list result: %d\n", x->item);
+}
+
+int main(int argc, char *argv[])
 {
   linked_list_tests();
-
+  int N = atoi(argv[1]);
+  int M = atoi(argv[2]);
+  josephus_problem_linked_list(N, M);
+  josephus_problem_linked_list_array(N, M);
+  
   return(0); 
 }
 
