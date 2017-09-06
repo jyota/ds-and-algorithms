@@ -286,19 +286,20 @@ void josephus_problem_linked_list_array(int N, int M)
 
   for(i = 0; i < N; ++i){
     item[i] = i + 1;
-    next[i] = (i + 1) == N ? 0 : i + 1;
+    next[i] = (i + 1) == N ? 0 : (i + 1);
   }
 
   int next_item = 0;
-  int prev_item = 0;
-  while(next[next_item] != prev_item){
-    for(i = 0; i < M; ++i){
-      if(i == M - 2) prev_item = item[next_item] - 1;
+  while(next[next_item] != next[next[next_item]]){
+    int prev_item = N-1;    
+    for(i = 1; i < M; ++i){
+      prev_item = next_item;
       next_item = next[next_item];
     }
-    next[prev_item] = next_item;
+    next[prev_item] = next[next_item];
+    next_item = next[next_item];
   }
-  printf("Josephus linked list array result: %d\n", item[next[next_item]]);
+  printf("Josephus linked list array result: %d\n", item[next_item]);
 }
 
 void josephus_problem_linked_list(int N, int M)
