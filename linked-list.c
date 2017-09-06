@@ -233,9 +233,9 @@ void reverse_list(list **l)
   }
 }
 
-int main()
+void linked_list_tests()
 {
-  list *mylist;
+  list *mylist = malloc(sizeof(list));
   mylist->item = 4;
   mylist->next = NULL;
   insert_list(&mylist, 3);
@@ -274,7 +274,12 @@ int main()
 
   move_after_t_to_after_x(mylistcopy->next, mylistcopy->next->next->next->next->next);
   print_traverse_circular(&mylistcopy, 5);
+}
 
-  return 0; 
+int main()
+{
+  linked_list_tests();
+
+  return(0); 
 }
 
