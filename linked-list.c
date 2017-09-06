@@ -9,6 +9,78 @@ typedef struct list {
   struct list *next;
 } list;
 
+list *copy_linked_list(list *l)
+{
+  if(l == NULL) return(NULL);
+  list *new_list = malloc(sizeof(list));;
+  new_list->item = l->item;
+  new_list->next = copy_linked_list(l->next);
+  return(new_list);
+}
+
+// Exercise 3.24 from Sedgwick's Algorithm's in C 3rd edition
+void count_nodes_circular_list(list *l)
+{
+   int i = 1;
+   list *current = l->next;
+   if(current == NULL){
+     printf("Empty list, no nodes to count.\n");
+   }else{
+    while(current != NULL){
+      if(current == l){
+        printf("Number of nodes: %d\n", i);
+        break;
+      }else{
+        ++i;      
+        current = current->next;
+      }
+    }
+  }
+}
+
+// Exercise 3.25 from Sedgwick's Algorithm's in C 3rd edition
+// below does the 'between' count exclusive of the nodes.
+void count_nodes_between(list *node_t, list *node_x)
+{
+  int i = 0;
+  list *current = node_t;
+  if(current == NULL || current->next == NULL){
+    printf("Empty or one item list, can't count between t and x.\b");
+  }else{
+    current = current->next;
+    while(current != NULL){
+      if(current == node_x){
+        printf("Number of nodes between x and t: %d\n", i);
+        break;
+      }
+      ++i;
+      current = current->next;
+    }
+  }
+}
+
+// Exercise 3.27 from Sedgwick's Algorithm's in C 3rd edition
+list *move_after_t_to_after_x(list *t, list *x)
+{
+  if(t == NULL || t->next == NULL || x == NULL || x->next == NULL){
+    printf("t and x must not be null and must be able to continue past them.\n");
+    return(t);
+  }else{
+    list *item_to_move = t->next;
+    list *current = t;
+    t->next = t->next->next;
+    while(current != NULL){
+      if(current == x){
+        item_to_move->next = x->next;
+        x->next = item_to_move;
+        break;
+      }
+      current = current->next;
+    }
+    return(current);
+  }
+}
+
 // Algorithm design manual problem 3.23 
 // (my recursive implementation)
 // this is kind of 'iterative' masquerading as recursive, 
@@ -70,6 +142,18 @@ void print_traverse(list **l)
   }
   printf("\n");  
 }
+
+// Traverse and print for n times (for circular lists)
+void print_traverse_circular(list **l, int n)
+{
+  list *current = *l;
+  for(int i = 0; i < n; ++i){
+    printf("%d ", current->item);
+    current = current->next;
+  }
+  printf("\n");  
+}
+
 
 // Lifted from Algorithm Design Manual
 list *search_list(list *l, int x)
@@ -180,6 +264,16 @@ int main()
   print_traverse(&mylist);
   mymiddle = find_middle(mylist);
   print_traverse(&mymiddle);
+
+  // circular list exercises.
+  list *mylistcopy = copy_linked_list(mylist);
+
+  mylistcopy->next->next->next->next->next = mylistcopy;
+  count_nodes_circular_list(mylistcopy);
+  count_nodes_between(mylistcopy->next->next, mylistcopy->next->next->next->next->next);
+
+  move_after_t_to_after_x(mylistcopy->next, mylistcopy->next->next->next->next->next);
+  print_traverse_circular(&mylistcopy, 5);
 
   return 0; 
 }
