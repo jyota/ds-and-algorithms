@@ -152,11 +152,11 @@ void move_largest_to_final(list *l)
   list *last;
   list *prev_to_largest;
   list *largest_next;
-  int largest_value_seen = -1;
 
   if(current == NULL || current->next == NULL){
     // do nothing
   }else{
+    int largest_value_seen = current->item - 1;    
     while(current != NULL){
       if(current->item > largest_value_seen){
         largest_value_seen = current->item;
@@ -177,6 +177,46 @@ void move_largest_to_final(list *l)
       }
       last->next = largest;
       largest->next = NULL;
+    }
+  }
+}
+
+// Sedgewick's Algorithms in C - exercise 3.34
+// Move smallest item on list to be the first node on the list
+// This approach returns pointer to new head.
+list *move_smallest_to_first(list *l)
+{
+  list *head = l;
+  list *current = l;
+  list *last;
+  list *prev_to_smallest;
+  list *smallest;
+  list *smallest_next;
+
+  if(current == NULL || current->next == NULL){
+    return head;
+  }else{
+    int smallest_value_seen = current->item + 1;    
+    while(current != NULL){
+      if(current->item < smallest_value_seen){
+        smallest_value_seen = current->item;
+        smallest = current;
+        if(last != NULL){
+          prev_to_smallest = last;
+          smallest_next = smallest->next; 
+        }
+      }
+      last = current;
+      current = current->next;
+    }
+    if(smallest == head){
+      return head;
+    }else{
+      if(prev_to_smallest != NULL){
+        prev_to_smallest->next = smallest_next;
+      }
+      smallest->next = head;
+      return smallest;
     }
   }
 }
@@ -293,21 +333,25 @@ void linked_list_tests()
   print_traverse(&mymiddle);
 
   // check for a 5 item list
-  mylist->item = 2;
+  mylist->item = 1;
   mylist->next = NULL;
   insert_list(&mylist, 4);
   insert_list(&mylist, 3);  
   insert_list(&mylist, 5);  
-  insert_list(&mylist, 1);  
+  insert_list(&mylist, 2);  
+  list *mylistcopy = copy_linked_list(mylist);
+
   print_traverse(&mylist);
   printf("Move largest to final: ");
   move_largest_to_final(mylist);
-  print_traverse(&mylist);
+  print_traverse(&mylist);  
+  printf("Move smallest to first: ");
+  list *newhead = move_smallest_to_first(mylist);
+  print_traverse(&newhead);
   mymiddle = find_middle(mylist);
   print_traverse(&mymiddle);
 
   // circular list exercises.
-  list *mylistcopy = copy_linked_list(mylist);
 
   mylistcopy->next->next->next->next->next = mylistcopy;
   count_nodes_circular_list(mylistcopy);
