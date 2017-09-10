@@ -356,23 +356,7 @@ void reverse_list(list **l)
 void linked_list_tests()
 {
   list *mylist = malloc(sizeof(list));
-  mylist->item = 4;
-  mylist->next = NULL;
-  insert_list(&mylist, 3);
-  insert_list(&mylist, 2);  
-  insert_list(&mylist, 1);
-
-  reverse_list(&mylist);
-  print_traverse(&mylist);
-
-  mylist = reverse_list_recursive(mylist, NULL);
-  print_traverse(&mylist);
-
-  mylist = reverse_pure_recursive(mylist);
-  print_traverse(&mylist);
-
-  list *mymiddle = find_middle(mylist);
-  print_traverse(&mymiddle);
+  list *mymiddle = malloc(sizeof(list));
 
   // check for a 5 item list
   mylist->item = 1;
@@ -381,10 +365,9 @@ void linked_list_tests()
   insert_list(&mylist, 3);  
   insert_list(&mylist, 5);  
   insert_list(&mylist, 2);  
-  list *mylistcopy = copy_linked_list(mylist);
   list *mylistcopy2 = copy_linked_list(mylist);
   
-
+  printf("Linkedlist used: ");
   print_traverse(&mylist);
   printf("Filter list to > 2: ");
   filter_list(&mylist, &filter_func);
@@ -394,18 +377,22 @@ void linked_list_tests()
   list *checklargest = move_largest_to_final(mylist);
   print_traverse(&checklargest);  
   printf("Move smallest to first: ");
-  list *newhead = move_smallest_to_first(mylistcopy);
+  list *newhead = move_smallest_to_first(checklargest);
   print_traverse(&newhead);
 
-  mymiddle = find_middle(mylistcopy);
+  printf("Get list from the middle: ");
+  mymiddle = find_middle(newhead);
   print_traverse(&mymiddle);
 
   // circular list exercises.
 
+  printf("Circular list stuff on list: ");
   mylistcopy2->next->next->next->next->next = mylistcopy2;
+  print_traverse_circular(&mylistcopy2, 5);  
   count_nodes_circular_list(mylistcopy2);
   count_nodes_between(mylistcopy2->next->next, mylistcopy2->next->next->next->next->next);
 
+  printf("Move t to after x: ");
   move_after_t_to_after_x(mylistcopy2->next, mylistcopy2->next->next->next->next->next);
   print_traverse_circular(&mylistcopy2, 5);
   printf("\n");
