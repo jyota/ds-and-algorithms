@@ -143,6 +143,44 @@ void print_traverse(list **l)
   printf("\n");  
 }
 
+// Sedgewick's Algorithms in C - exercise 3.34
+// Move largest item on list to be the final node on the list
+void move_largest_to_final(list *l)
+{
+  list *current = l;
+  list *largest;
+  list *last;
+  list *prev_to_largest;
+  list *largest_next;
+  int largest_value_seen = -1;
+
+  if(current == NULL || current->next == NULL){
+    // do nothing
+  }else{
+    while(current != NULL){
+      if(current->item > largest_value_seen){
+        largest_value_seen = current->item;
+        largest = current;
+        if(last != NULL){
+          prev_to_largest = last;
+          largest_next = largest->next;
+        }
+      }
+      last = current;    
+      current = current->next;
+    }
+    if(largest == last){
+      // do nothing
+    }else{
+      if(prev_to_largest != NULL){
+        prev_to_largest->next = largest_next;
+      }
+      last->next = largest;
+      largest->next = NULL;
+    }
+  }
+}
+
 // Traverse and print for n times (for circular lists)
 void print_traverse_circular(list **l, int n)
 {
@@ -255,12 +293,15 @@ void linked_list_tests()
   print_traverse(&mymiddle);
 
   // check for a 5 item list
-  mylist->item = 5;
+  mylist->item = 2;
   mylist->next = NULL;
   insert_list(&mylist, 4);
   insert_list(&mylist, 3);  
-  insert_list(&mylist, 2);  
+  insert_list(&mylist, 5);  
   insert_list(&mylist, 1);  
+  print_traverse(&mylist);
+  printf("Move largest to final: ");
+  move_largest_to_final(mylist);
   print_traverse(&mylist);
   mymiddle = find_middle(mylist);
   print_traverse(&mymiddle);
@@ -328,10 +369,10 @@ void josephus_problem_linked_list(int N, int M)
 int main(int argc, char *argv[])
 {
   linked_list_tests();
-  int N = atoi(argv[1]);
-  int M = atoi(argv[2]);
-  josephus_problem_linked_list(N, M);
-  josephus_problem_linked_list_array(N, M);
+  //int N = atoi(argv[1]);
+  //int M = atoi(argv[2]);
+  //josephus_problem_linked_list(N, M);
+  //josephus_problem_linked_list_array(N, M);
   
   return(0); 
 }
