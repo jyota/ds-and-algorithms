@@ -9,6 +9,13 @@ typedef struct list {
   struct list *next;
 } list;
 
+// Doubly-linked list struct
+typedef struct double_list {
+  int item;
+  struct double_list *prev;
+  struct double_list *next;
+} double_list;
+
 // Exercise 3.38 from Sedgewick's Algorithms in C 3rd ed
 list *copy_linked_list(list *l)
 {
@@ -143,6 +150,18 @@ void print_traverse(list **l)
   }
   printf("\n");  
 }
+
+// My traverse doubly-linked list and print implementation
+void print_double_traverse(double_list **l)
+{
+  double_list *current = *l;
+  while(current != NULL){
+    printf("%d ", current->item);
+    current = current->next;
+  }
+  printf("\n");  
+}
+
 
 // Exercise 3.34 - Sedgewick's Algorithms in C 
 // Move largest item on list to be the final node on the list
@@ -297,6 +316,68 @@ void insert_list(list **l, int x)
   *l = p;
 }
 
+// Insert for doubly linked list
+void insert_double_list(double_list **l, int x)
+{
+  double_list *p;
+
+  p = malloc(sizeof(double_list));
+  p->item = x;
+  p->next = *l;
+  p->prev = NULL;
+  (*l)->prev = p;
+  *l = p;
+}
+
+// Exercise 3.44 Sedgewick's Algorithms in C 3rd ed.
+// Swap two nodes in doubly linked list
+void swap_nodes_in_double_list(double_list *a, double_list *b, double_list **l)
+{
+  double_list *head = *l;
+
+  bool switch_head_a = false;
+  bool switch_head_b = false;
+
+  if(a == head) switch_head_a = true;
+  if(b == head) switch_head_b = true;
+
+  if(a->next == b){
+    double_list *temp_c = a;    
+    if(a->prev) a->prev->next = b;
+    a->next = b->next;
+    a->prev = b;
+    if(b->next) b->next->prev = a;
+    b->next = a;
+    b->prev = temp_c->prev;
+    if(switch_head_a) *l = b;
+  }else if(b->next == a){
+    double_list *temp_d = b;    
+    if(b->prev) b->prev->next = a;    
+    b->next = a->next;    
+    b->prev = a;    
+    if(a->next) a->next->prev = b;        
+    a->next = temp_d;
+    a->prev = temp_d->prev;
+    if(switch_head_b) *l = a;
+  }else{
+    double_list *actual_bnext = b->next;
+    double_list *actual_bprev = b->prev;
+    
+    b->next = a->next;
+    b->prev = a->prev;
+    if(a->prev) a->prev->next = b;
+    if(a->next) a->next->prev = b;
+    
+    a->next = actual_bnext;
+    a->prev = actual_bprev;
+    if(actual_bprev) actual_bprev->next = a;
+    if(actual_bnext) actual_bnext->prev = a;
+
+    if(switch_head_b) *l = a;
+    if(switch_head_a) *l = b; 
+  }
+}
+
 // Lifted from Algorithm Design Manual
 list *predecessor_list(list *l, int x)
 {
@@ -357,7 +438,21 @@ void linked_list_tests()
 {
   list *mylist = malloc(sizeof(list));
   list *mymiddle = malloc(sizeof(list));
+  double_list *mydoublelist = malloc(sizeof(double_list));
 
+  mydoublelist->item = 1;
+  mydoublelist->next = NULL;
+  mydoublelist->prev = NULL;
+  insert_double_list(&mydoublelist, 4);
+  insert_double_list(&mydoublelist, 3);
+  insert_double_list(&mydoublelist, 5);
+  insert_double_list(&mydoublelist, 2);
+  printf("Doubly linked list: ");
+  print_double_traverse(&mydoublelist);
+  printf("Swap nodes: ");  
+  swap_nodes_in_double_list(mydoublelist->next, mydoublelist->next->next->next->next, &mydoublelist);
+  print_double_traverse(&mydoublelist);
+  
   // check for a 5 item list
   mylist->item = 1;
   mylist->next = NULL;
