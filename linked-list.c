@@ -342,22 +342,20 @@ void swap_nodes_in_double_list(double_list *a, double_list *b, double_list **l)
   if(b == head) switch_head_b = true;
 
   if(a->next == b){
-    double_list *temp_c = a;    
     if(a->prev) a->prev->next = b;
     a->next = b->next;
     a->prev = b;
     if(b->next) b->next->prev = a;
     b->next = a;
-    b->prev = temp_c->prev;
+    b->prev = a->prev;
     if(switch_head_a) *l = b;
   }else if(b->next == a){
-    double_list *temp_d = b;    
     if(b->prev) b->prev->next = a;    
     b->next = a->next;    
     b->prev = a;    
     if(a->next) a->next->prev = b;        
-    a->next = temp_d;
-    a->prev = temp_d->prev;
+    a->next = b;
+    a->prev = b->prev;
     if(switch_head_b) *l = a;
   }else{
     double_list *actual_bnext = b->next;
