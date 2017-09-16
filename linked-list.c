@@ -16,6 +16,17 @@ typedef struct double_list {
   struct double_list *next;
 } double_list;
 
+// Exercise 3.47 from Sedgewick's Algorithms in C 3rd ed
+void free_linked_list(list **l)
+{
+  list *current = *l;
+  while(current != NULL){
+    list *this = current;
+    current = current->next;
+    free(this);
+  }
+}
+
 // Exercise 3.38 from Sedgewick's Algorithms in C 3rd ed
 list *copy_linked_list(list *l)
 {
@@ -491,6 +502,7 @@ void linked_list_tests()
   move_after_t_to_after_x(mylistcopy2->next, mylistcopy2->next->next->next->next->next);
   print_traverse_circular(&mylistcopy2, 5);
   printf("\n");
+  free_linked_list(&mylist);  
 }
 
 // Sedgewick Algorithms in C exercise 3.33 solution
