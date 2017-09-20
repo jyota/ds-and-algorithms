@@ -38,14 +38,13 @@ bool is_palindrome(char *string)
       return false;
   }
 
-  while(i < str_len){
+  while(i < str_len && i < j){
     while(string[i] == ' ' && i < str_len){
         ++i;
     }
     while(string[j] == ' ' && j > 0){ 
         --j;
-    }
-    
+    }    
     if((i == str_len && string[i] == ' ') || (j == 0 && string[j] == ' ')){
         // do nothing.
     }else if(string[i] != string[j]){
@@ -54,8 +53,9 @@ bool is_palindrome(char *string)
         seen_a_char = true;
         if(i < str_len) ++i;
         if(j > 0) --j;
-    }
+    }    
   }
+  
   if(seen_a_char){
       return true;
   }else{
@@ -72,7 +72,9 @@ int main(int argc, char *argv[])
   printf("Count of char occurence for: %s\n", string);
   count_print_char_occurrence(string);
 
-  char palindrome_string[] = "  iT opiNonAv evAnoNip oTi";
+  //char palindrome_string[] = "  iT opiNonAv evAnoNip oTi";
+  //char palindrome_string[] = "if i had a hifi";
+  char palindrome_string[] = "J JJ ifi            JJ    J";
   printf("Palindrome check for: %s\n", palindrome_string);
   is_a_palindrome = is_palindrome(palindrome_string);
   printf("%s\n", is_a_palindrome ? "Yes" : "No");
