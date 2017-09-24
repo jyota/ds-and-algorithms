@@ -99,6 +99,33 @@ char *mystrcat(char *s1, char *s2)
     return working_string;
 }
 
+// Exercise 3.59 from Sedgewick's Algorithms in C (3rd ed)
+// 2nd arg is a string of strings to check for in 1st arg string
+// (each string in 2nd arg should be space delimited)
+void find_substrings(char *parent_string, char *search_strings)
+{
+    char *word;
+    size_t i;
+    size_t j;
+    size_t parent_strlen = strlen(parent_string);
+    size_t word_strlen;
+
+    for(word = strtok(search_strings, " "); word; word = strtok(NULL, " ")){
+        word_strlen = strlen(word);
+        for(i = 0; i < parent_strlen; ++i){
+            if(parent_string[i] == word[j]){
+                if(j == word_strlen - 1){
+                    printf("%s\n", word);
+                }else{
+                    ++j;
+                }
+            }else{
+                j = 0;
+            }
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {  
   char string[] = "These are a few of my favorite things.";
@@ -120,5 +147,15 @@ int main(int argc, char *argv[])
   printf("mystrcat for: %s + %s\n", string, test_concat_string);
   char *concat_string = mystrcat(string, test_concat_string);
   printf("%s\n", concat_string);
+  printf("----------\nEnter string to search within: ");
+  char parent_string[100];
+  fgets(parent_string, sizeof(parent_string), stdin);
+  parent_string[strcspn(parent_string, "\n")] = 0;
+  printf("Enter search terms (separated by spaces): ");
+  char search_terms[100];
+  fgets(search_terms, sizeof(search_terms), stdin);
+  search_terms[strcspn(search_terms, "\n")] = 0;
+  printf("Substring search for: %s\n(search terms: %s)\n", parent_string, search_terms);
+  find_substrings(parent_string, search_terms);
   return 0;
 }
