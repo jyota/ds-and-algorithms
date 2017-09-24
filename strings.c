@@ -126,10 +126,39 @@ void find_substrings(char *parent_string, char *search_strings)
     }
 }
 
+//Exercise 3.60 Sedgewick's Algorithms in C (3rd ed)
+char *replace_multiblanks(char *string)
+{
+    char *modified_string;
+    size_t the_strlen = strlen(string);
+    size_t i;
+    size_t j = 0;
+    bool onarun = false;
+    modified_string = malloc(the_strlen * sizeof(char));
+
+    for(i = 0; i < the_strlen; ++i){
+        if(string[i] == ' '){
+            if(!onarun){
+                modified_string[j] = string[i];
+                ++j;
+            }
+            onarun = true;
+        }else{
+            onarun = false;
+        }
+        if(!onarun){
+            modified_string[j] = string[i];
+            ++j;
+        }
+    }
+    return modified_string;
+}
+
 int main(int argc, char *argv[])
 {  
   char string[] = "These are a few of my favorite things.";
   char test_concat_string[] = " Except powerWheels.";
+  char lotsablanks[] = "   Dude     that's a    lots    a    blankz    .";
   bool is_a_palindrome;
 
   printf("Count of char occurence for: %s\n", string);
@@ -157,5 +186,7 @@ int main(int argc, char *argv[])
   search_terms[strcspn(search_terms, "\n")] = 0;
   printf("Substring search for: %s\n(search terms: %s)\n", parent_string, search_terms);
   find_substrings(parent_string, search_terms);
+  printf("-----\nReplace blanks for: %s\n", lotsablanks);
+  printf("%s\n", replace_multiblanks(lotsablanks));
   return 0;
 }
