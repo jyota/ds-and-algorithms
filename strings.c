@@ -64,9 +64,45 @@ bool is_palindrome(char *string)
   }
 }
 
+// Exercise 3.58 from Sedgewick's Algorithms in C (3rd ed)
+char *mystrcpy(char *s1)
+{
+    char *working_string;
+    size_t i;
+    size_t s1_length = strlen(s1);
+    working_string = malloc(s1_length * sizeof(char));
+    for(i = 0; i < s1_length; ++i){
+        working_string[i] = s1[i];
+    }
+
+    return working_string;
+}
+
+char *mystrcat(char *s1, char *s2)
+{
+    char *working_string;
+    size_t i;
+    size_t s1_length = strlen(s1);
+    size_t s2_length = strlen(s2);
+    size_t combined_length = s1_length + s2_length;
+    working_string = malloc(combined_length * sizeof(char));
+    for(i = 0; i < combined_length; ++i){
+        char char_to_copy;
+        if(i < s1_length){
+            char_to_copy = s1[i];
+        }else{
+            char_to_copy = s2[i - s1_length];
+        }
+        working_string[i] = char_to_copy;
+    }
+
+    return working_string;
+}
+
 int main(int argc, char *argv[])
 {  
   char string[] = "These are a few of my favorite things.";
+  char test_concat_string[] = " Except powerWheels.";
   bool is_a_palindrome;
 
   printf("Count of char occurence for: %s\n", string);
@@ -78,5 +114,11 @@ int main(int argc, char *argv[])
   printf("Palindrome check for: %s\n", palindrome_string);
   is_a_palindrome = is_palindrome(palindrome_string);
   printf("%s\n", is_a_palindrome ? "Yes" : "No");
+  printf("mystrcpy for: %s\n", string);
+  char *copied_string = mystrcpy(string);
+  printf("%s\n", copied_string);
+  printf("mystrcat for: %s + %s\n", string, test_concat_string);
+  char *concat_string = mystrcat(string, test_concat_string);
+  printf("%s\n", concat_string);
   return 0;
 }
