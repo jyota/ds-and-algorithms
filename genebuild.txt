@@ -1,0 +1,2021 @@
+Genebuild process documentation
+
+This document assumes you know how to run the ensembl-pipeline
+system or have another system in place for running this code.
+You can find out more about how the pipeline works from
+ensembl-doc/pipeline_docs/the_ensembl_pipeline_infrastructure.txt
+
+This document contains overview of the genebuild process. First it will cover
+the basics of what we attempt to do. Then it will give specific details
+of individual pieces of code and how to run them. There will also be a
+discussion on how to find/fetch the required evidence. This document is
+only concerned with the prediction of protein coding models and not ncRNAs,
+that is a process described in ensembl-doc/pipeline_docs/ncRNAs.txt. All
+program names in this document refer to the names of RunnableDBs found in
+Bio::EnsEMBL::Analysis::RunnableDB unless otherwise specified.
+
+Overview
+=======
+
+The main genebuild process can be divided into 8 main stages.
+
+  1. Finding evidence sources
+  2. Ab initio predictions
+  3. Evidence alignment
+  4. Prediction of CDS structures and alternative gene prediction methods
+  5. Filtering predicted CDS structures
+  6. Addition of UTRs to CDS structures
+  7. Finding missing models and improving existing models
+  8. Merging prediction sets of varying qualities
+  9. Creating a set of non-redundant models
+  10. Identifying pseudogenes and other problematic CDS structures
+  11. Post-genebuild processing
+  12. Checks to do 
+      12.1 Throughout the genebuild
+      12.2 At handover
+  13. Code
+      13.1 CVS checkouts
+      13.2 Creating an Ensembl schema database
+      13.3 Bio::EnsEMBL::Analysis::Config::Databases
+      13.4 Analysis tables
+      13.5 Blast/BlastGenscanPep
+      13.6 Identifying taxonomy of evidence
+      13.7 Pmatch
+      13.8 BlastMiniGenewise
+      13.9 ExonerateForGenewise
+      13.10 Exonerate2Genes
+      13.11 BestTargetted
+      13.12 TranscriptCoalescer
+      13.13 TranscriptConsensus
+      13.14 DiTags
+      13.15 UTR_Addition
+      13.16 Comparative analysis
+      13.17 GeneBuilder
+      13.18 PseudoGene
+      13.19 ensembl-killlist
+      13.20 Combining annotation sets: IncrementalBuild and LayerAnnotation
+      13.21 CopyGenes
+      13.22 Viral genes, anti_virus.pl
+      13.23 Gene Set QC
+  14. Frequently Asked Questions
+  15. References
+
+===============================
+1. Finding evidence sources
+===============================
+
+There are a number of sources for biological/experimental evidence and each data
+source has a specific use within the genebuild process:
+
+ * Proteins are used to predicted coding transcript models
+ * cDNAs (mRNAs) are used to add UTR to our coding models
+ * ESTs are generally not used in the genebuild process
+ * Ditags, when available, are used to define the 5' and 3' ends
+   of transcripts
+
+Species-specific data is usually given the highest priority when predicting
+transcript models.
+
+Uniprot:
+==
+ * http://www.uniprot.org/
+
+The Uniprot data can be found on the Uniprot website. The data are subdivided by
+us into different taxonomic groups, eg. in the Human analysis we may divide the
+Uniprot data into mammals, non-mammalian vertebrates and invertebrates.
+
+
+Species-specific data:
+==
+ * http://www.ncbi.nlm.nih.gov/
+ * http://www.uniprot.org/
+ * http://srs.ebi.ac.uk/
+
+We also try to source species-specific data such as proteins, cDNAs,
+ESTS, and if possible, data like ditags and CAGE. This can be sourced
+through Uniprot, SRS at the EBI (http://srs.ebi.ac.uk/) or Entrez
+at the NCBI (http://www.ncbi.nlm.nih.gov/). For some species both
+the Uniprot and NCBI ftp sites provide pre-made sets of data. For
+example the REFSEQ proteome for mouse can be found here at the NCBI
+ftp://ftp.ncbi.nlm.nih.gov/genomes/M_musculus/protein/.
+
+After the data have been downloaded, there may be some pre-analysis processing
+of the data:
+
+We create a protein index file of the species' proteome, for faster access to
+the sequences. We use a program written in C called 'indicate' to create our
+protein index file. You'll need to check out our ensc-core code to access it.
+Once you have indicate, you can do the following:
+
+  indicate -d $PWD -f your_proteome.fa -i your_proteome_index -p SingleWordParser
+
+cDNAs and ESTs are clipped to remove polyA tails. In some cases ESTs may also be
+trimmed to only the sequence that has been annotated as being of high quality.
+ensembl-pipeline/scripts/EST/new_polyA_clipping.pl
+
+===============================
+2. Ab initio predictions
+===============================
+
+After creating an Ensembl-schema database and loading the DNA sequence and
+assembly into the database (called the 'core' or 'reference' database), we are
+ready for our first set of analyses.
+
+This first set of analyses to be run is referred to as the 'raw computes'. The
+raw computes involve running various ab initio algorithms across the genome. The
+results of most these analyses are not used directly in the genebuild process,
+but they are used for display purposes on our website.
+
+The results from all raw computes are written to the reference (core) database.
+
+The algorithms used in the raw compute stage include:
+
+  RepeatMask    # repeats
+  Dust          # repeats
+  Genscan       # gene models
+  TRF           # transcription factors
+  tRNAscan      # tRNAs
+  Eponine       # transcription start sites
+  CpG           # CG-rich islands
+
+Unigene, Uniprot and Vertrna alignments (see below) are usually run at the same
+time as the ab initio predictions as part of the raw compute process.
+
+Just a quick note - remember that Databases.pm in Bio::EnsEMBL::Analysis::Config
+specifies the reference database and also where the output of an analysis will
+be written to. Some analyses, eg. raw computes, will have thier results written
+directly into the reference database. Most other analyses in the genebuild,
+eg. genewise, should write their results to a clean database as specified in
+ensembl-analysis/modules/Bio/EnsEMBL/Analysis/Config/Databases.pm. The only
+database in the genebuild process having pipeline tables is the reference
+database as it controls all analyses throughout the genebuild. It is therefore
+very important to make sure that the analysis table from your reference database
+is copied into the analysis table of all other databases that you intend to
+write into. This can be done by dumping the analysis table and then importing it
+in the other databases.
+
+  mysql -hhost -uuser -ppass -D reference_db -e "flush tables"
+  mysqldump --opt -hhost -uuser reference_db analysis > reference_db_analysis.sql
+  mysql -hhost -uuser -ppass -D other_db < reference_db_analysis.sql
+
+
+===============================
+3. Evidence alignment
+===============================
+
+Evidence alignment occurs at a number of stages withing the genebuild:
+
+(i) Raw compute step
+
+Before any CDS prediction can happen we need to align the source evidence (DNA
+or protein) to the genome. You should have at least the complete Uniprot protein
+collection available for this step.
+
+Three sources of evidence are usually aligned to the genome, usually during the
+raw compute stage:
+
+  Unigene
+  Uniprot
+  Vertrna
+
+Results are written to the reference database.
+
+Uniprot:
+We align ab initio predictions to the Uniprot database using the BlastGenscanPep
+module.  This module uses BLASTP for comparing ab initio predictions (generally
+from Genscan but you can use any source) against the Uniprot database. This is
+done for time-saving reasons as blasting the raw genome against the database
+would take too long. Once the initial BLAST comparisons have been run, the
+results are divided into species- or family- specific groups to allow better
+assessments of which predictions to trust most.
+
+Unigene and Vertrna:
+Use the BlastGenscanDna module.
+
+(ii) Targetted step
+
+The Targetted Step is the stage in the genebuild process where coding transcript
+models are predicted using species-specific proteins.
+
+Species-specific proteins are downloaded and aligned to the genome using Pmatch
+[1] and Exonerate2Genes.  Pmatch is based on a fast exact match algorithm.
+Exonerate2Genes runs Exonerate [2]. We use both programs as they can produce
+different results and the overlapping set gives us a better set of results than
+each individual set on its own.
+
+Results are written to the reference database.
+
+(iii) Alignment of cDNAs and ESTs
+
+Species-specific cDNAs and ESTs are aligned to the genome using the
+Exonerate2Genes module (Exonerate). The results are written to the otherfeatures
+database. For species that have very little species-specific data available,
+human cDNAs and ESTs may also be aligned to the genome. cDNA evidence is used
+to complete gene predictions and to add UTR information to protein-based CDS
+models. EST evidence is most often not used in the genebuild process.
+
+Note that for human and mouse, the cDNA alignments might be generated using the 
+cDNA_update pipeline and the results stored in the 'cdna' database instead of the 
+'otherfeatures' database.
+ensembl-pipeline/scripts/cDNA_update/cDNA_update.pl
+
+When aligning cDNAs and ESTs to the genome, we use a default of coverage >= 90
+and percent_id >= 97. Sometimes these parameters align too few sequences and
+the analysis is rerun using no coverage or percent_id cutoff. The result of
+this second run is plotted (x=percent_id, y=number of sequences) and a cutoff
+slightly lower than percent_id=97 is chosen.
+
+'EST genes' are produced from the original alignments by running
+TranscriptCoalescer or ESTGenebuilder, as described later.
+
+(iv) Other
+
+Ditags may be used when adding UTR.
+
+The program documentation to look at further down includes:
+
+13.5 Blast/BlastGenscanPep
+13.6 Identifying taxonomy of evidence
+13.7 Pmatch
+13.10 Exonerate2Genes
+13.14 DiTags
+
+===============================
+4. Prediction of CDS structures and alternative gene prediction methods
+===============================
+
+Coding structures are predicted in two stages, and results from both stages are
+written to a clean database (usually referred to as the Genewise Database):
+
+(i) Targetted stage
+
+The Targetted stage predicts transcript models from species-specific proteins.
+For species where there is a lot of species-specific protein evidence, the
+targetted stage is the more important of the two stages because it will produce
+the most reliable transcript models. The Targetted stage is always run before
+the Similarity stage.
+
+(ii) Similarity stage
+
+The Similarity stage predicts transcript models from proteins that are not
+species-specific but rather from other closely related species. The similarity
+stage is designed to 'fill in the gaps' where there was not enough species-
+specific evidence to predict enough transcript models during the Targetted
+stage.
+
+The Similarity stage is usually run in several layers, of increasing
+evolutionary distance: The first layer to be run will use proteins from species
+that are most closely related to our genome of interest. The final layer will
+use proteins from species that are more distantly related to our genome of
+interest. The # different layers are created by dividing the Uniprot into
+subgroups. The human genome is well annotated and is often able to contribute
+evidence towards this stage.
+
+How are the coding structures predicted?
+
+The majority of the CDS structures are predicted using the RunnableDB
+BlastMiniGenewise module which utilises Genewise [3]. The module uses protein
+alignments from Pmatch, produced as described above, to seed a re-blast of
+the protein sequence against the genome. This is to ensure the ab initio
+predictor which was used to find the alignment has not missed anything. The
+results of the re-blast are then assessed and, again, used to seed one or more
+Genewise runs. The CDS structures are then filtered to ensure they pass various
+criteria and then written back to the database. This process can also be run
+using Exonerate as the gene prediction algorithm. In this case the RunnableDB
+ExonerateForGenewise module is used.
+
+For some species while there is little protein evidence there can be a lot
+of cDNA or EST sequence available. These can be effectively aligned using
+Exonerate2Genes but this does not give non-redundant clusters of the gene
+structures which have complete ORFS. TranscriptCoalescer is a module which
+can cluster the EST and cDNA alignments and resolve the clusters into the
+most likely transcript structures. It is also capable of taking 'similarity
+evidence' to aid in this joining.
+
+The program documentation to look at includes
+
+13.6 Identifying taxonomy of evidence
+13.8 BlastMiniGenewise
+13.9 ExonerateForGenewise
+13.12 TranscriptCoalescer
+
+
+===============================
+5. Filtering predicted CDS structures
+===============================
+
+The CDS prediction process (see above) can produce a large number of very
+similar CDS predictions. We have a number of methods for filtering these
+predictions to reduce the search space and make erroneous clustering of
+transcript models into gene less likely.
+
+The filtering process, much like the Similarity stage, is an iterative process.
+Various methods are used to filter out unwanted predictions until we arrive at a
+healthy set.
+
+The results of filtering are usually written to a clean database.
+
+Three filtering methods are discussed:
+
+(i) BestTargetted
+
+This looks at predictions made from the same protein in the same location but
+using different methods/algorithms (eg. Exonerate vs Genewise). It assesses
+each structure on how similar to the parent protein it is and then picks the
+structure which is most like the parent protein. Currently this is generally
+used to assess the best models built from species-specific proteins in species
+that have a large amount of species-specific data.
+
+(ii) TranscriptConsensus
+
+The second filtering method is called TranscriptConsensus. This filtering is
+based purely on genes which cluster together on the basis of overlap. Each
+cluster is collapsed into a redundant set of exons and introns. Each exon/intron
+is scored on the basis of supporting evidence. This can include est or cdna
+evidence. The best transcript of each cluster is selected. This does tend to
+remove most alternative splice forms but is it currently considered in species
+whose gene structures are mostly based on non species specific evidence that
+many of the alternative splice forms are incorrect.
+
+In assessing the predicted models, models are labelled as 'good', 'bad' or
+'small'.
+
+
+(iii) LayerAnnotation
+
+The LayerAnnotation module can also be used to filter CDS structures. A
+hierarchy of biotypes are passed to the module which then accepts all models
+from the top layer (biotype) and successively fills in gaps using models from
+the next layer (biotype) in the list. This requires some knowledge of which
+biotypes are expected to produce the best models - usually determined using
+TranscriptConsensus (see above) or Apollo.
+
+Apollo (http://apollo.berkeleybop.org/current/index.html) is quick and easy to
+install. It allows you to view results from each stage in the genebuild and is
+an invaluable tool in helping us to assess the quality of our gene models.
+
+
+The program documentation to look at includes:
+
+13.11 BestTargetted
+13.13 TranscriptConsensus
+13.20 Combining annotation sets: IncrementalBuild and LayerAnnotation
+
+
+===============================
+6. Addition of UTRs to CDS structures
+===============================
+
+Once a set of CDS structures have been predicted and assessed we can then use
+any available cDNA, EST and Ditag data to try and give these models UTRs.
+Mostly this data is species specific but in some cases when a high quality
+data set is available from another species close by that can also be used, for
+example Human cDNAs were used to add UTR to Rhesus Macaque CDS structures.
+The ditag alignments aren't discussed here but documentation can be found in
+ensembl-doc/pipeline_docs/ditag_analysis.txt. The cDNA and EST data will of
+hopefully been aligned at stage 3 using Exonerate2Genes. These alignments are
+compared with the CDS structures to find cDNA alignments that match the CDS
+structure and can provide additional information. If a CDS structure has no
+cDNA match EST data will also be looked at. Aligned ditags can be used to give
+support to one cDNA over another. This should produce a gene set which can then
+be fed into our GeneBuilder Algorithm.
+
+Results are usually written to a clean database.
+
+The program documentation to look at includes:
+
+13.10 Exonerate2Genes
+13.15 UTR_Addition
+
+===============================
+7. Finding missing models/Improving existing models
+===============================
+
+Once you have aligned all of your evidence sets and produced gene models from
+them you may want to look for what you may have missed. We use an orthology
+based analysis which run a comparative analysis of the predicted peptide set
+with at least 3 other species, generally human as it provides the highest
+quality annotation set plus two more closely related species. Once a set of
+orthologs have been predicted missing one to one relationships are looked for as
+as relationships where the protein in your species is significantly longer or
+shorter than it is in the other species.
+
+The program documentation to look at includes:
+
+13.16 Comparative analysis
+ - FindMissingOrthologues
+ - FindPartialGenes
+ - FindSplitGenes
+
+===============================
+8. Merging prediction sets of varying qualities
+===============================
+
+The above processed can create various different sets of CDS structures which
+need to be merged together with differing priorities. There are two pieces of
+code to do this the first is IncrementalBuild which is a runnable that simply
+compares 2 gene sets and returns those in the secondary set which don't overlap
+with the primary. The LayerAnnotation code (see above) is more complex. It can
+compare multiple gene sets to each other using varying rules both for filtering,
+what to compare and how to store them.
+
+The program documentation to look at includes:
+
+13.20 Combining annotation sets: IncrementalBuild and LayerAnnotation
+ - IncrementalBuild
+ - LayerAnnotation
+
+===============================
+9. Creating a non-redundant set of models
+===============================
+
+Once you have the most complete set of CDS structures you think you can find
+you need to reduce them to a non redundant set of transcripts and group them
+into gene objects. Our algorithm for doing this is the GeneBuilder[4]. The
+comparative analysis used to find missing models require this to be run first
+and then it needs to be run again as the final set of transcripts is defined.
+The GeneBuilder itself clusters genes on coding exon overlap and then compares
+exon pairs collapsing identical pairs into non redundant groups. If there are
+more than 10 alt-splice forms in a particular cluster the 10 best are taken and
+this is based on length, presence of UTR and other similar factors.
+
+GeneBuilder is run on single-transcript gene models.
+
+You may find that after running the GeneBuilder, you have fewer multi-
+transcript gene models than expected. In this case, it is possible to add models
+into the set - perhaps using LayerAnnotation or Compara. The GeneBuilder can be
+re-run after LayerAnnotation and the number of genes counted. The process loops
+until we have enough good models.
+
+Note that before approx. mid-2007, the GeneBuilder clustered on all exons and
+not only coding exons. Species that have not be rebuilt since this time will
+have their genes clustered according to the older rule.
+
+The program documentation to look at includes:
+
+13.17 GeneBuilder
+
+===============================
+10. Identifying pseudogenes and other problematic CDS structures
+===============================
+
+Pseudogene annotation in Ensembl is run at the end of the genebuild process and
+is essentially about removing pseudogenes that have been incorrectly predicted
+as functional genes, no attempt is made to actively predict pseudogenes.
+Pseudogenes are initially identified at the transcript level, all transcripts
+are then compared on a gene by gene basis.
+
+Results from the Pseudogene analysis are usually written to the original
+reference (core) database.
+
+The criteria for determining a transcript to be a pseudo-transcript are:
+
+    * At least 80% of the introns are covered with repeats and the
+      total intron length is smaller than 5Kb and the gene has a least 1
+      real and 1 frame-shifted intron (default values).
+    * All of the introns are short frame-shifted introns
+    * Two exon gene with intron covered with a protein feature
+    * The CDS of the transcript is >99% covered by repeats
+    * The transcript has a single exon and has a similar CDS to
+      another transcript elsewhere in the genome that is spliced,
+      ( evidence of retro-transposed flanking genomic DNA is also
+      considered.)
+
+If a gene is found to contain a mixture of pseudo and real transcripts, the
+pseudo-transcripts are removed and the gene is considered to be functional.
+If a gene contains pseudo-transcripts exclusively the pseudo-transcripts and
+translations are deleted leaving only the longest transcript to represent the
+gene.
+
+For more information, see section " 13.18 PseudoGene ".
+
+Viral pseudogenes are identified through a different method which uses a script
+to scan core databases after release to look for viral associated protein
+domains. The script produces a summary of the affected genes, a list of gene
+identifiers to remove and a list of supporting protein evidence to add to the
+kill list. If checking a database that is already on the website it can also
+generate an HTML click list so the results can easily be checked. The domains
+used to identify the genes are stored in a file called domain_kill_list.txt,
+they consist of primary domain profiles that are used to find the putative
+viral genes and secondary domain profiles that are used as supporting evidence
+that a gene is viral but are not considered to be proof on their own. Genes are
+considered viral if any of the following are true:
+
+    * They contain a hit to a primary domain and they have at least
+      one 'short' transcript. ( 'Short' = genomic span of CDS / CDS length >= 2 )
+
+    * They do not have any short transcripts but all the domains in
+      all the transcripts are either primary or secondary domains
+
+
+Once the viral genes have been identified and the kill list collated the script
+then finds any other genes made from proteins on the kill list and applies the
+length filter to them to decide whether to kill them.
+
+For more information, see " 13.22 Viral genes, anti_virus.pl " (contains
+documentation when you run it).
+
+Other genes have been removed in the past via a variety of techniques which
+collectively became known as "Dodgy genes", these were often genes built from
+flawed evidence that probably should never have been entered into the sequence
+databases. It does not really have a formal code base but is more of a list of
+criteria that can be used to highlight potentially problematic gene structures.
+Genes removed in this way include:
+
+    * Genes with no PFAM or SMART domains, no orthologs or paralogs,
+      that were not projected in any of the 2x genomes and have coding
+      overlap with a gene on the opposite strand.
+
+    * A combination of some of the above criteria and a lack of other
+      evidence i.e. supporting ESTs or cDNAs.
+
+For the human genebuild this approach has been extended to incorporate the
+Alpheaus gene assessments.
+
+
+The program documentation to look at:
+
+3.18 PseudoGene
+3.22 Viral genes, anti_virus.pl
+
+===============================
+11. Post-genebuild processing
+===============================
+
+After the gene set is complete, we do:
+
+(i) Xrefs
+
+The xref system cross-references the structures in our database with sequences
+in external databases. For example, human gene models that are found in the
+CCDS set will be cross-referenced to the CCDS database and they will have a
+link out to the external CCDS site. There are a number of databases that we
+cross-reference to including EMBL, Uniprot, Unigene, RefSeq, Interpro, GO.
+
+The relevant modules can be found here: ensembl/misc-scripts/xref_mapping/
+
+See ensembl/misc-scripts/xref_mapping/docs/xrefs_detailed_docs.txt some explanation.
+
+A note on status and source: 
+If the protein evidence for a transcript is from the same species (usually made
+in the targetted stage) then status = KNOWN. If the protein evidence for a
+transcript is from a different species (usually made in the similarity stage)
+then status = NOVEL. The status is set during the xref stage.
+
+(ii) Protein annotation
+
+Translations in the core database are searched for domains eg: Prints,
+PrositePatterns, PrositeProfiles, Pfam, Tigerfam, Smart, Superfamily, Pirsf Seq,
+SignalP, Ncoils, Tmhmm
+
+See ensembl-doc/pipeline_docs/protein_annotation.txt
+
+(iii) ncRNAs
+
+See ensembl-doc/pipeline_docs/ncRNAs.txt
+
+(iv) Stable ID mapping
+
+The stable id mapping code is written, maintained and run by Ensembl's
+Core team. It is used to assign stable ids to a new gene set:
+ensembl/misc-scripts/id_mapping/README
+
+(v) Biotypes
+
+All protein-coding transcripts have biotype 'protein_coding'. Transcripts
+defined by the Pseudogene module as being pseudogenes will have biotype of
+'pseudogene'. Non-coding RNAs are split into several biotypes.
+
+A list of accepted biotypes can be found here:
+ensj-healthcheck/biotypes.txt
+
+
+===============================
+12. Checks to do
+===============================
+
+12.1 Throughout the genebuild
+==
+It is advisable to run quality checks throughout the genebuild, to make sure
+that one analysis doesn't produce weird results that affect downstream analyses.
+For example, we might check for stop codons in our transcripts after running UTR
+addition. If we wait until the end of a genebuild before doing these checks, and
+we find something went wrong, it could mean a lot of the genebuild work needs to
+be redone.
+
+The following script finds most major errors:
+ensembl-analysis/scripts/buildchecks/check_GBgenes.pl
+
+See section "13.23 Gene Set QC" for more information.
+
+Grepping through the output files from this script can give you useful
+information such as:
+  - approximate number of genes. (grep for "Reclustering reduced
+    number of genes" and then print the sum of the 10th column eg. grep
+    "Reclustering reduced number of genes" outfiles_dir/* | awk '{sum +=$10} END {print sum}')
+  - genes with errors. (grep "Number of genes with errors")
+  - stop codons. (grep "Translation failed")
+  - Biotype of translations with stop codons - sometimes it's one
+    analysis (biotype) causing the problem.
+
+A second useful way for checking your results is to look at the transcript
+models in Apollo Gene Annotation Tool, to make sure that the models being made
+"look correct". Sometimes using the wrong parameters in an analysis can result
+in strange-looking transcript structures (eg. transcripts with unusually long
+introns) and it is sometimes easier to spot these by eye than by writing a
+script.
+
+USEFUL SQL:
+
+(i) All genes must have transcripts
+  select g.* from gene g left join transcript t on t.gene_id=g.gene_id where t.gene_id is NULL;
+
+(ii) All transcripts must have exon_transcript links
+  select t.* from transcript t left join exon_transcript et on t.transcript_id=et.transcript_id where \
+  et.transcript_id is NULL;
+
+(iii) All exon_transcript must have exon links
+  select et.* from exon_transcript et left join exon e on et.exon_id  \
+  = e.exon_id where e.exon_id is NULL;
+
+(iv) All transcripts must link to transcript_supporting_feature
+  select t.* from transcript t left join transcript_supporting_feature tsf on \
+  t.transcript_id=tsf.transcript_id where tsf.transcript_id is NULL;
+
+(v) All transcripts up to the genebuilder stage must have translations
+  select t.* from transcript t left join translation tln on \
+  t.transcript_id=tln.transcript_id where tln.transcript_id is NULL;
+
+
+
+12.2 At handover 
+==
+Of course, at the end of the genebuild, we need to run a whole lot of checks
+before the data goes 'live'. These checks are called healthchecks and they can
+be found in an ensembl checkout called ensj-healthcheck.
+
+The healthcheck code is written in Java and is maintained by our Ensembl-Core
+team. A detailed document on running the healthcecks can be found here:
+ensj-healthcheck/README
+
+The healthchecks come in 2 types: those that relate directly to the data and
+those that relate to how the data has changed since the previous release.
+
+Healthchecks relating directly to the data should check for things like:
+- are there stop codons in your transcripts?
+- are there any duplicate exons?
+- are there any exons that are not attached to a transcript?
+- are there any foreign key problems in your tables?
+- are any of your genes very long?
+- do all analyses in the analysis table have an entry in analysis_description
+- have repeat-types and framshift attribute scripts been run?
+etc.
+
+Healthchecks relating to how the data has changed since the previous release
+should check for things like: (requires connection to database used for previous
+release)
+- do you have a similar number of genes in this build as you did in the previous build?
+- For xrefs, do you have a similar number of cross-references as you did in the previous build?
+etc.
+
+All healthchecks of all types can be run in a single command for your species so
+you don't need to worry about missing any checks. eg. for human you would do:
+
+ cd ensj-healthcheck
+ vi database.properties # enter database port, name
+ ./run-healthcheck.sh -output info -d your_database_name -type core -species 'Homo sapiens' post_genebuild
+
+Note:
+- Results are written to screen unless you redirect them elsewhere.
+- The 'info' ouput option provides a useful summary of results at the end of runtime, which is useful for debugging. There are more verbose options if you prefer.
+- The type of database you create in a genebuild is a core database. Other types of database could be 'otherfeatures' or 'cdna'.
+- The post_genebuild flag defines a group of healthcheck tests that need to be run after a genebuild. There are other aliases and you can also state one specific healthcheck instead of a group.
+- If you'd like to see how your data compares to a previous release, the script will expect both your databases to have the ensembl-standard naming format (eg. takifugu_rubripes_core_51_4j and takifugu_rubripes_core_52_4k) so that pattern-matching can be done on the names to link the old and new databases. They should also both be on the same mysql instance. 
+
+
+===============================
+13. Code
+===============================
+
+13.1 CVS checkouts
+==
+
+The majority of the code below is found in the ensembl module
+ensembl-analysis. This and the rest of the ensembl code can be got
+from the Ensembl GitHub repository. Instructions on how to do this can be
+found
+
+http://www.ensembl.org/info/using/api/api_installation.html
+
+You also need the bioperl code and instructions on how to fetch that
+can also be found in the above document.
+
+Note for the pipeline and analysis modules are not
+branched in the same way as the core api is. This means it is
+generally advised to checkout the main trunk of the respository. To do
+this rather than using the checkout command as show above you need to
+use fetch the repositories from https://github.com
+
+ensembl-code - branched by default when cloned
+
+The analysis, pipeline and kill-list code are not branched, use the master code.
+
+
+First a few pieces of code/tips which are useful for the process.
+
+13.2 Creating an Ensembl schema database
+==
+(i) To create an empty database with the Ensembl schema, do:
+
+  mysql -hhost2 -uuser -ppass -e "create database my_reference_dbname"
+  mysql -hhost2 -uuser -ppass genewise_dbname < ensembl/sql/table.sql
+
+(ii) Creating an Ensembl schema database from your reference database
+
+The genebuild process requires the creation of a a lot of databases. The
+easiest way to do this is to use mysqldump, and only dump the tables
+you need, from your reference (core) database. Then load these 
+tables into a new database
+
+  mysqldump --opt -hhost -uuser -ppass my_reference_dbname analysis seq_region seq_region_attrib attrib_type assembly meta_coord meta coord_system > path/to/new_database_sql.sql
+
+Now you need to create your new database
+
+  mysql -hhost2 -uuser -ppass -e "create database genewise_dbname"
+  mysql -hhost2 -uuser -ppass genewise_dbname < ensembl/sql/table.sql
+  mysql -hhost2 -uuser -ppass genewise_dbname < path/to/new_database_sql.sql
+
+The new databse, genewise_dbname, will need an an appropriate entry in
+the Databases.pm configuration file described below.
+
+
+13.3 Bio::EnsEMBL::Analysis::Config::Databases
+==
+
+This file contains the majority of the Database connection settings
+for the GeneBuild process.
+
+Its structure is a hash of hashes. The top level hash contains
+a list of key value pairs which point to anonymous hashes
+of DBAdaptor constructor arguments which can then using
+code in either Bio::EnsEMBL::Analysis::Tools::Utilities or
+Bio::EnsEMBL::Analysis::RunnableDB::BaseGeneBuild be turned into full
+Adaptor objects (these are methods called get_dbadaptor_by_string or
+get_dbadaptor respectively). This looks like
+
+DATABASES => {
+
+  # The REFERENCE_DB (formerly known as GB_DB) holds sequence +
+  # repeats + features from raw computes (e.g. ab-initio predictions,
+  # dna- or protein alignments )
+
+  REFERENCE_DB =>
+  {
+   -dbname => 'my_db,
+   -host => 'host',
+   -port => '3306',
+   -user => 'username',
+   -pass => 'pass',
+  },
+}
+
+There are several standard database names
+
+REFERENCE_DB, Where the dna and the pipeline tables are generally stored
+GENEWISE_DB, Where the genewise results are written
+EXONERATE_DB, Where the exonerate results are written
+BLESSED_DB, Where any blessed genes are kept
+UTR_DB, Where the UTR genes are kept
+GENEBUILD_DB, Where the genebuild writes its output
+PSEUDO_DB, Where the Pseudogene analysis writes its output (usually same as REFERENCE_DB)
+
+13.4 Analysis tables
+==
+
+Due to how the pipeline systems works all the analysis
+tables across the databases you use need to be identical. The
+refernce database usually contains the 'master' copy of the analysis
+table, and all other databases throughout the build should have
+their analysis tables copied from, and synchronised with, the 
+reference db's analysis table. This can be achieved using mysqldump.
+
+There is also a script which will do this for you and it can be found
+ensembl-pipeline/scripts/synch_analysis_tables.pl.
+
+Its commandline looks like
+
+  perl synch_analysis_tables.pl -database_name REFERENCE_DB -output_file /path/to/location/mysql can read and write to
+
+Note this synch is destructive, it basically takes a copy of the
+analysis table pointed at, deletes all others and replaces it with
+this one. If you analysis tables contain the same logic names but
+different analysis ids this script will break things.
+
+13.5 Blast/BlastGenscanPep
+==
+
+This analysis is part of the raw compute which is more fully described
+in the document the_raw_compute.txt. These analyses use the RunnableDB
+Bio::EnsEMBL::Analysis::RunnableDB::BlastGenscanPep and the config
+file Bio::EnsEMBL::Analysis::Config::Blast.
+
+The reason for using BlastGenscanPep is to reduce the search space and
+therefore time taken to run the blasts against Uniprot as otherwise
+the blast analysis would take too long to run. To reduce the chance
+of missing exons which weren't predicted by exonerate we re blast the
+proteins identified by the blast against the small piece of the whole
+genome. This gives use the completest picture possible of a particular
+protein before handing the data to Genewise.
+
+13.6 Identifying taxonomy of evidence
+==
+
+When running the Similarity stage of our genebuild process we tend
+to divide the protein evidence into different taxonomic divisions,
+Mammal, Non Mammal Vertebrate and Non Vertebrate are common groups
+chosen. This information can be found from the OC lines of files in
+EMBL format and the SOURCE ORGANISM line from Genbank files. Both
+the EBI EMBL interface and the NCBI Entrez search can provide this
+information for you.
+
+13.7 Pmatch
+==
+
+Pmatch is a fast alignment program written by Richard Durbin we used
+to align species specific proteins to the genome, (We also use it to
+align very closely related species proteins sets e.g Mouse to Rat or
+Fugu to Tetraodon).
+
+The pmatch source code is available from the
+sanger cvs respository in module rd-utils,
+(http://cvs.sanger.ac.uk/cgi-bin/viewvc.cgi/rd-utils/?root=ensembl).
+The code to run this process in the ensembl code
+base can be found in 2 RunnableDBs and a config
+file. Bio::EnsEMBL::Analysis::RunnableDB::Pmatch,
+Bio::EnsEMBL::Analysis::RunnableDB::BestPmatch and
+Bio::EnsEMBL::Analysis::Config::GeneBuild::Pmatch
+
+Before you run pmatch you need to source your protein data. An summary
+of this process is given in section 1 of the overview, Finding
+evidence sources.
+
+Once you have you protein sequences to be aligned you need to create a
+single fasta file with appropriately formatted fasta headers. This is
+done using a script called prepare_proteome.pl and can be found here:
+
+ensembl-analysis/scripts/genebuild/prepare_proteome.pl
+
+An example commandline for this script
+
+  perl prepare_proteome.pl -pmatch_output_file pmatch_output_file.fa  -file_info protein_input_file='(\S+)
+
+This process is split into two analyses, Pmatch and BestPmatch.
+
+First Pmatch is run. This process aligns all the proteins in the
+prepared file to a specific top level piece and is run for each of the
+toplevel pieces in the given assembly. The input ids for this Runnable
+should be Slice names. The configuration file for Pmatch is
+
+Bio::EnsEMBL::Analysis::Config::GeneBuild::Pmatch.
+
+This contains several variables. There are default settings but each
+analysis run also needs at hash keyed from its logic name which
+contains at least the location of the protein file.
+
+PROTEIN_FILE   path to the proteome file
+MIN_COVERAGE the limit of coverage, below which hits are not stored
+BINARY_LOCATION the path to the pmatch binary
+REPEAT_MASKING, any logic names to mask the dna sequence. Normally we run on unmasked sequence
+MAX_INTRON_LENGTH, the maximum intron length between independent sections of the same hit
+OUTPUT_DB, the name of the output database in Bio::EnsEMBL::Analysis::Config::Databases
+
+Pmatch is run on whole chromosomes. This means it get
+slice names as input ids. These can be generated using the
+ensembl-pipeline/scripts/make_input_ids script with a command line
+like
+
+  make_input_ids -dbhost host -dbuser user -dbpass **** -dbname my_db -slice -coord_system chromosome -logic_name SubmitChromosome
+
+Once all the Pmatch runs have finished, BestPmatch can be run. This
+takes all the results and for each protein finds the best hit and
+those within 2% percent identity of it to ensure that if the best hit
+is to a pseudogene it doesn't prevent a protein coding gene from being
+predicted. BestPmatch runs across the whole genome so an input id
+string of genome is sufficient. It uses the same config file as Pmatch
+but a different config hash. The variables which need definition are:
+
+Bio::EnsEMBL::Analysis::Config::GeneBuild::Pmatch.
+
+PMATCH_LOGIC_NAME the logic name to fetch protein align features using
+MIN_COVERAGE the minimum coverage to accept
+INPUT_DB the database to fetch the protein align features from
+OUTPUT_DB the database to write the protein align features to
+
+Once this is run a set of best in genome hits for each protein is
+available and these can be used to defined which proteins to align to
+the genome using Genewise and in what location
+
+As there is only one run for BestPmatch its input id doesn't really
+matter. As every RunnableDB needs an input id for the pipeline system
+to be able to track it. This means we give BestPmatch the string
+genome.
+
+This can be generated again using the make_input_ids script with a
+command line like:
+
+  make_input_ids -dbhost host -dbuser user -dbpass **** -dbname my_db -logic_name SubmitGenome -single
+
+
+13.8 BlastMiniGenewise
+==
+
+BlastMiniGenewise is the name of the code which runs our
+genewise alignments. There are actually 4 modules called
+BlastMiniGenewise, like for Pmatch there is the Runnable,
+RunnableDB and Config file and there is also another object
+Bio::EnsEMBL::Analysis::Tools::Filter::BlastMiniGenewise. This module
+post filters the genes once they have come out of genewise, check
+things like evidence coverage and level of low complexity protein
+sequence.
+
+This process is used to feed both the Pmatch, Exonerate and Blast
+based protein alignments into Genewise. The config file allows a lot
+of flexibility with what source of protein align features are run with
+and how they are filtered.
+
+The config file follows the same structure as the Pmatch config of a
+default has followed by hashes keyed on logic name Basic variables
+found in the config file are:
+
+PAF_LOGICNAMES, This is an array of logic names used to fetch protein align features from the input database. This must contain at leas one value
+PAF_MIN_SCORE_THRESHOLD, this is the minimum value in the score
+PAF_UPPER_SCORE_THRESHOLD, This is if you want to set an upper threshold on blast scores if lower scoring hits are being used in a gap filling approach
+PAF_SOURCE_DB, The name of the database in Bio::EnsEMBL::Analysis::Config::Databases where the protein align features are stored
+GENE_SOURCE_DB, The name of the database in Databases config where genes for masking are to be sourced
+OUTPUT_DB, The name of the database in Databases config the output gene structures are to be stored in
+OUTPUT_BIOTYPE, The string to be given as a biotype to the output genes
+GENEWISE_PARAMETERS, Any constructor parameters for the
+MINIGENEWISE_PARAMETERS, Constructor parameters for MiniGenewise
+MULTIMINIGENEWISE_PARAMETERS, Constructor parameters for MultiMiniGenewise
+BLASTMINIGENEWISE_PARAMETERS, Constructor parameters for BlastMiniGenewise, by default full_seq => 1 is specifies as normally we run the Genewises on genomic sequence rather than
+miniseqs these days
+EXONERATE_PARAMETERS, Constructor parameters for ExonerateTranscript if using ExonerateForGenewise
+FILTER_OBJECT, perl path to a filter object which has a method called filter_genes which takes as an argument an arrayref of genes and returns two arrayrefs the first being a list of accepted gene models the second being a list of rejected genemodels. The default filter object is Bio::EnsEMBL::Analysis::Tools::Filter::BlastMiniGenewise
+FILTER_PARAMS, constructor parameters for the filter object
+BIOTYPES_TO_MASK, this is a list of gene biotypes to be fetched from the GENE_SOURCE_DB. These genes can be used for two purposes. Pre masking which compares them to the protein align features being used to seed the genewise alignments and getting rid of those protein ids which overlap with the existing gene sets. The second is Post masking which compares the output gene set to this list of gene and again removes the overlapping set.
+EXON_BASED_MASKING, Compare to the genes for masking on the basis of exon overlap.
+GENE_BASED_MASKING, Compare to the genes for masking on the basis of gene extent overlap.
+PRE_GENEWISE_MASK, Compare the input protein align features to the genes for masking.
+POST_GENEWISE_MASK, Compare the output gene models to the gene for masking.
+REPEATMASKING,  If the input dna sequence is to be masked the logic names of the features to use should be in this array
+SOFTMASKING, The masking would be done using lower case letters rather than N's
+SEQFETCHER_OBJECT, The object to use to fetch the protein sequences out of an index file, by default this is Bio::EnsEMBL::Pipeline::SeqFetcher::OBDAIndexSeqFetcher.
+SEQFETCHER_PARAMS, Constructor parameters for the Seqfetcher object. See also SEQFETCHER_DIR for an explanation of the dir required. 
+USE_KILL_LIST, A binary switch for the use of the kill list. This is a database structure which can be used to store identifiers of protein sequences not to be used in the annotation process and the api for the structure is discussed future down the document.
+LIMIT_TO_FEATURE_RANGE, This is a binary variable which alters what sequence is given to the BlastMiniGenewise Runnable, if this is switched on each protein align feature which is in the database is used to generate a slice plus extra padding if defined below and that is given to the BlastMiniGenewise Runnable along with that single protein id. If this is switched off
+FEATURE_RANGE_PADDING, If the limit to feature range is switched on this defined the additional padding which is added to the sequence
+WRITE_REJECTED, This is a binary switch which when defined means that genes rejected by the filtered are also stored but with an different biotype. These genes also have transcript attributes associated with them to indicate why they were rejected
+REJECTED_BIOTYPE, The biotype given to a rejected gene
+
+Unlike most RunnableDBs BlastMiniGenewise will actually take 3
+different types of input ids. It will take the standard slice names
+like the majority of our RunnableDBs. These can be generated using
+the make_input_ids script described earlier. It also takes two other
+formats which both start with slice name. The first looks like this
+
+coord_system_name:version:seq_region_name:start:end:id_bin_size:id_bin_index.
+
+The final two values are numbers. This is setup to try and reduce the
+number of ids processed by genewise in a single job as for Similarity
+jobs where the protein ids are based on Blast hits there can be a
+lot of proteins associated with the same slice. The first number
+represents how many bins the ids are divided up into, we generally
+use a bin size of 20 so if you had 100 ids this value would be 5.
+The second number is the index from which to start taking ids. For
+example if the value is 3 then every 3rd id in the set goes into this
+particular analysis.
+
+These input ids can be created in two ways, both of which
+require the BlastMiniGenewise config file to have been filled
+out before they can be run. The first is with a script,
+ensembl-pipeline/scripts/GeneBuild/make_input_ids_for_similarity_build.pl.
+This reads the config file but also takes the database name pointing
+to your pipeline database in Databases.pm which is most likely to be
+REFERENCE_DB. You can also specify the number of proteins per job and
+the maximum slice size on the command line.
+
+You can also use a RunnableDB which is found here
+ensembl-analysis/modules/Bio/EnsEMBL/Analysis/RunnableDB/MakeSimilarit
+yInputIDs.pm. Again this reads the BlastMiniGenewise config but
+this time it creates new input ids on the basis of the input id is
+it given. This can be run as part of the pipeline system before the
+Similarity runs are done.
+
+In this document and others talking about the Genebuild you may
+see the terms Targeted and Similarity. These are referring to the
+data sets used for running the protein alignments and then genewise
+with. Targeted refers to species specific or very close species
+protein data being aligned like Human to Human or Mouse to Rat.
+The initial alignments for these are generally done with Pmatch or
+Exonerate. For Similarity the protein data set generally includes the
+whole of Uniprot. These alignments are initially carried out using
+BlastGenscanPep which does blastp against Uniprot. Blasting against
+the Genscan Peptides is done to save time as blasting against the raw
+masked genomic sequence would take to long.
+
+13.9 ExonerateForGenewise
+==
+
+This is a module which will run Exonerate instead of Genewise in
+the BlastMiniGenewise system. It uses the same config files as
+BlastMiniGenewise and filters the output results in the same manner.
+It just instantiates an ExonerateTranscript Runnable rather than a
+BlastMiniGenewise runnable. In all other respects it can be used in
+the same manner as BlastMiniGenewise.
+
+13.10 Exonerate2Genes
+==
+
+Exonerate2Genes is the code we have which runs the majority of
+our exonerate alignments. The RunnableDB and Config files are
+both called Exonerate2Genes but the Runnable they run is called
+ExonerateTranscript. Unusually for a RunnableDB the input take is a
+chunk of sequences in fasta format rather than a slice name. These
+sequences are then exonerated against the query genome before results
+are returned.
+
+The config file Bio::EnsEMBL::Analysis::Config::Exonerate2Genes has
+several variables.
+
+GENOMICSEQS, this should point to a file path. This can be in 3 different forms, the first is a path to a single file which contains all the genome. The second is a directory which contains
+several fasta files to be used in the alignment process. The last is an arrayref to an array of file names all to be used.
+QUERYTYPE, This is if the query sequence is protein or dna
+QUERYSEQS, This is the directory where the files used as input ids should be located or a single file of cdna sequences
+QUERYANNOTATION, This is one file which should contain annotation for all the sequences being aligned. The format of this file should be like this
+                             EU239246.1      +       19      1968, the 4 columns represent sequence id, sequence strand, coding start, sequence length. This is needed for the cdna2genome model
+IIDREGEXP, If you send a single file for your query sequence rather than using a directory and having input ids which are file names your input ids then need to be 2 numbers which can be parsed out using the regex. This uses Exonerates -querychunkid and -querychunktotal commandline options which allow binning of a large fasta file. The first number in the id should be query chunk id and this is the particular bin to collect ids for, the second number should be querychunktotal which is the total number of bins the file contains.
+OUTDB, connection details for the output database. This can either be a hash for the DBAdaptor constructor or a name pointing to a database in the Databases.pm config file.
+FILTER, This is details of the filter to be applied to the results from Exonerate. This should be a hash with two entries. The key OBJECT should point to the filter object and the key PARAMETERS to the constructor arguments for that object. As standard we use the filter object Bio::EnsEMBL::Analysis::Tools::ExonerateTranscriptFilter. Any filter object specified must
+                  have a method called filter_results which takes an arrayref of transcripts and returns an arrayref of transcripts.
+COVERAGE_BY_ALIGNED, This is a binary flag for the calculation of the coverage score. If not switched on the coverage of the query sequence is based on the exon lengths.  
+                                  With it switched the coverage calculation actually looks at the evidence which supports each exon to calculate the coverage.
+OPTIONS, These should be commandline options for exonerate. As standard we run with -model est2genome --forwardcoordinates FALSE --softmasktarget TRUE --exhaustive FALSE
+              --score 500 --saturatethreshold 100 --dnahspthreshold 60 --dnawordlen 1 for dna sequences and --model protein2genome --forwardcoordinates FALSE --softmasktarget TRUE
+              --exhaustive FALSE  --bestn 1 for protein sequences.
+NONREF_REGIONS, This should be 1 as standard but 0 if the haplotypic sequences in Human or other species are not to be used.
+
+As standard the input ids for this should be file names. These can be
+created using the make input ids script with a command line that looks
+like:
+
+  make_input_ids -dbhost host -dbuser user -dbpass **** -dbname my_db -logic_name SubmitcDNA -file -dir /path/to/dir/with/files
+
+It is important to note especially for the cdna and est alignments
+that come out of Exonerate2Genes that they don't necessarily have
+complete open reading frames and aren't subject to the same structural
+sanity checks that the genes produced by BlastMiniGenewise are.
+
+This code is also used for aligning solexa data. In these cases we
+frequently use the exonerate bestn option and the BasicFilter module
+just for checking coverage or percentage identity. In these cases
+you are generally aligning very short sequences which mean that the
+exonerate settings need to be altered. We generally reduce the score
+threshold to at least 150. This is because exonerate assigns a score
+of 5 for each perfectly matched base so a score cut off of 500 means
+there needs to be at least 100 perfectly matched bases for a result
+to come back. 150 works relatively well for solexa reads as it means
+there needs to be 30 matched bases but if your sequences are shorter
+still you will need to further reduce your score limit.
+
+13.11 BestTargetted
+==
+
+This is one of the modules used for filtering gene sets
+from multiple different algorithms. It uses the RunnableDB
+Bio::EnsEMBL::Analysis::RunnableDB::BestTargetted. Its aim is to pick
+the best model from a selection of algorithms based on a particular
+protein sequence.
+
+The config file has a standard setup with these variables.
+
+VERBOSE, Binary variable, if set to one the program is more chatty.
+KEEP_SINGLE_ANALYSIS, Binary variable, if set to one any protein which only has an alignment from one analysis is automatically kept.
+SEQFETCHER_DIR, The directory where an index of all the peptide sequences used in the predictions can be found
+SEQFETCHER_OBJECT, The seqfetcher object to use, we generally use Bio::EnsEMBL::Pipeline::SeqFetcher::OBDAIndexSeqFetcher
+BIOTYPES, an array of biotypes to fetch. Note the order of the biotypes in the array is important as where multiple models have identical stores the biotype at the start of the arrray is taken in preferance.
+DB_NAME, Name of input database in Databases.pm
+OUT_DB_NAME, Name of output database in Databases.pm
+EXONERATE_PROGRAM, path to exonerate program to use.
+
+In the case where cdna2genome models are included in this dataset the
+process isn't quite so straightforward. The protein index needs to
+include the peptide sequences for all the cdnas and it needs to be
+indexed in a manner that can be accessed by both the cdna and protein
+sequence identifiers.
+
+BestTargetted is run on whole chromosomes using slice name input ids
+which can be created as described earlier in the document.
+
+13.12 TranscriptCoalescer
+==
+
+This is a module for turning EST alignments into gene structures. Its
+RunnableDB is Bio::EnsEMBL::Analysis::RunnableDB::TranscriptCoalescer.
+It needs EST alignments as input and these generally come from
+Exonerate2Genes. It can also take in genewise genes (generally
+similarity based) and ab initio predictions to try and add in
+resolution of the EST structures.
+
+Note that ESTGenebuilder is used instead of TranscriptCoalescer for human.
+All other species use TranscriptCoalescer.
+
+The config for this process at the moment is inflexible and only one
+set of config can be defined for a TranscriptCoalescer run. This does
+create complications for the TranscriptConsensus analysis described
+below but it will be explained there how to get round this problem.
+
+The config file,
+Bio::EnsEMBL::Analysis::Config::GeneBuild::TranscriptCoalescer has
+several variables.
+
+NEW_BIOTYPE, the biotype to give to output genes.
+OUTPUT_DATABASE,  The database name in Databases.pm to write the output genes to.
+WRITE_FILTERED_TRANSCRIPTS, The process filters out partial transcripts which are overlapped by longer models. With this binary flag set to 1 these transcripts will also be stored but with a modified biotype.
+WRITE_ALTERNATIVE_TRANSCRIPTS, This is a binary flag if set to one will cause genes based on the similarity input to be written back to the database.
+MIN_TRANSLATION_LENGTH,  This is the minimum length a translation must be.
+VERBOSE, Binary flag for verbosity.
+TRANSCRIPT_COALESCER_DB_CONFIG, This is a hash of hashes. Each internal hash has a key which is the Database name in Databases.pm and then 2 internal keys of BIOTYPE which should be the list of biotypes for genes to be fetched from the database and AB_INITIO_LOGICNAMES which should be the list of logic names for any ab initio predictions to be fetched from the database.
+An example structure is:
+{
+  REFERENCE_DB => {
+         BIOTYPES             => [],
+         AB_INITIO_LOGICNAMES => [ 'GeneFinder', 'Genscan', 'fgenesh' ],
+  },
+  GENEWISE_DB => { BIOTYPES => ['simimarity_genewise_biotype'],
+                   AB_INITIO_LOGICNAMES => [],
+  },
+  EXONERATE_DB => { BIOTYPES             => [ 'est_all', 'dbest' ],
+                    AB_INITIO_LOGICNAMES => [],
+  },
+},
+
+EST_SETS, Array of biotypes which represent EST genes.
+SIMGW_SETS, Array of biotypes which represent Similarity genes 
+ABINITIO_SETS, Array of logic names which represent ab initio predictions
+
+This module runs on slices. There is a specific script for generating
+Ththese slices though as it clusters the genes and attempts to
+Thgenerate slices which don't break up gene clusters. e script is in
+Thensembl-pipeline/scripts/GeneBuild
+
+  make_TranscriptCoalescer_inputIDs.pl -dbhost myhost -dbuser user -dbpass ***** -dbname my_db -dbport 3306 -logic_name SubmitCoalescer -input_id_type COALESCER_SLICE -slice_size 1000000 -seq_region_name all -coord_system toplevel
+
+This will create 1MB slice names avoiding gene clusters covering
+boundaries.
+
+The ESTs used to generate ESTgenes are stored in the otherfeatures database.
+Results from TranscriptCoalescer and ESTgenes are generally also written into 
+the otherfeatures database.
+
+13.13 TranscriptConsensus
+==
+
+This is a module for filtering gene sets on the basis of how they
+cluster. It is designed to take protein based gene models but can
+take cdna, est and solexa based evidence as support. The RunnableDB
+is Bio::EnsEMBL::Analysis::RunnableDB::TranscriptConsensus. This
+process divides the similarity gene set into 3 groups, the first is
+small, these are clusters which don't contain enough information to
+be scored. The second is good these are the best transcripts from a
+cluster. The third is bad, these are the rest of the transcripts in a
+cluster.
+
+As mentioned above it uses the TranscriptCoalescer config file
+which means if you have already run TranscriptCoalescer you will
+need to take a copy of your current config to keep a record of it
+but then reedit the config file to cover the gene sets being used
+for TranscriptConsensus. There is an additional config file called
+Bio::EnsEMBL::Analysis::Config::GeneBuild::TranscriptConsensus with
+these variables.
+
+FILTER_SINGLETONS, Binary switch if on will remove transcripts from clusters if they have totally unique exons
+FILTER_NON_CONSENSUS, Binary switch if on will remove transcripts from clusters if they have non consensus splice sites
+FILTER_ESTS, Binary switch if on will include the est transcripts in the initial pre filter
+ADD_UTR, Binary switch if on the code will attempt to add UTRs to your similarity structures on the basis of the EST data
+MIN_CONSENSUS, This is the minimum number of transcripts in a cluster before it will be scored, less than this and it will be labelled with the SMALL_BIOTYPE
+UTR_PENALTY, This is a value between 0 and 1 and alters how ests are used to assign ESTs the closer to 0 the value the more strict the addition is.
+END_EXON_PENALTY, This is the level of penalty designed to reduce spindly exons.
+EST_OVERLAP_PENALTY, This the level of penalty for a structure which overlaps an EST but doesn't share any exons.
+SHORT_INTRON_PENALTY,  Introns shorter than this are penalized
+SHORT_EXON_PENALTY,  Exons shorter than this will be penalized 
+GOOD_PERCENT, Genes whose scores are within this percent of the top are kept
+GOOD_BIOTYPE, Biotype to assign to good transcripts.
+BAD_BIOTYPE, Biotype to assign to bad transcripts
+SMALL_BIOTYPE, Biotype to assign to small transcripts.
+If Bad or Small biotypes are left blank the transcripts won't be written
+SOLEXA, Binary flag to indicate the use of solexa reads.
+SOLEXA_SCORE_CUTOFF, Only fetch solexa reads with a score greater than the cut off.
+This next variable contains information about which database to fetch the Solexa data from and what biotypes to fetch.
+TRANSCRIPT_CONSENSUS_DB_CONFIG => {
+  SOLEXA_DB => {
+    BIOTYPE => ['solexa_exonerate'],
+  },
+},
+
+Again TranscriptConsensus tends to be run on 1MB slices so the same
+input id creation script can be used as for TranscriptCoalescer.
+
+13.14 DiTags
+==
+
+The ditag technology provides sequence tags to delimit the start and
+end of cdna sequences. This data can be aligned to the genome and
+used to aid UTR selection. Instructions on potential places to source
+Ditag data and how to run the process can be found in the document
+ditag_analysis.txt which is in ensembl-doc/pipeline_docs
+
+13.15 UTR_Addition
+==
+
+UTR Addition is the process by which we use cDNA and EST
+alignments to add UTR structures to protein coding genes
+generally based on protein evidence. The RunnableDB run
+is Bio::EnsEMBL::Analysis::RunnableDB::UTR_Addition. The
+config for this code follows the same basic structure
+of a default hash followed by logic name hashes as the
+majority of other config files and the variables defined in
+Bio::EnsEMBL::Analysis::Config::GeneBuild::UTR_Addition are:
+
+INPUT_DB, Database name to source protein coding gene models from
+OUTPUT_DB, Database name to write the processed genes to
+CDNA_DB, Database to source the cdna alignments from
+EST_DB, Database to source the est alignments from
+DITAG_DB, Database to source ditag data from
+BLESSED_DB, Database to get blessed gene models from
+INPUT_GENETYPES, The input gene biotypes to fetch
+BLESSED_GENETYPES, The blessed gene biotypes to fetch
+cDNA_GENETYPE, The cdna biotypes to fetch
+EST_GENETYPE, The est biotype to fetch
+EXTEND_ORIGINAL_BIOTYPE, This is a binary flag which means the new utr label is added to the existing biotype rather than replacing it
+UTR_GENETYPE, The UTR biotype
+KNOWN_UTR_GENETYPE, The known utr biotype
+BLESSED_UTR_GENETYPE, The blessed utr biotype
+EXTEND_BIOTYPE_OF_UNCHANGED_GENES, A string to append to the unchanged genes biotypes
+MAX_INTRON_LENGTH, Longest intron allowed
+MAX_EXON_LENGTH, Longest exon allowed
+PRUNE_GENES, This is a binary flag for gene filtering. This prunes the transcript clusters during gene filter and is not recommended
+FILTER_ESTS, This is a binary flag which switches on filtering of the input est alignments. It is very strict but does produce a cleaner set.
+LOOK_FOR_KNOWN, This is a binary flag indicating that there are know cdna/protein pairs which should be used for UTR addition
+KNOWNUTR_FILE, File containing info about known protein/cdna pairs
+DITAG_TYPE_NAMES, This is an array of ditag set names. This allows greater confidence to be assigned to these sets over others.
+DITAG_WINDOW, The size is base pairs in which a ditag is considered for a given cdna base position
+VERBOSE, A binary flag to switch on verbosity.
+
+This is generally run on 1MB Slices which can be created using the
+make input id script.
+
+13.16 Comparative analysis.
+==
+
+For the majority of our builds now we run a orthology pipeline using
+the ensembl-compara code and then use the results from it to assess
+and improve our geneset. To do this you also need the ensembl-compara
+and the ensembl-hive code base. This should be run on a gene set which
+has gone through the GeneBuilder which is described later in the
+document.
+
+First you need to decide which species to put in your orthology
+pipeline. We try and use Human as it provides the highest quality
+annotation set plus 2 close species. For example for the platypus
+build we used Human, Monodelphis and Chicken. For Rat we would use
+Human, Horse and Dog, you wouldn't necessarily use Mouse for Rat as
+they have such a close evolutionary relationship that it doesn't
+necessarily provide the best discriminator.
+
+Setting up the compara pipeline requires a few things. You need to
+ensure your meta table contains the taxonomy information. If you have
+a copy of the ncbi taxonomy database you can use this script
+
+  ensembl-pipeline/scripts/load_taxonomy.pl -name "Echinops telfairi" -taxondbhost dbhost -taxondbport 3306 -taxondbname ncbi_taxonomy -lcdbhost otherhost -lcdbport 3306 -lcdbname ensembl_core_database -lcdbuser user -lcdbpass ****
+
+Your gene set also needs to give your gene set fake stable ids. This
+can be done using this sql:
+
+  mysql>insert into gene_stable_id select gene_id, concat( 'TETRAG',lpad(gene_id,11,'0')), 0, now(),now() from gene;
+  mysql>insert into transcript_stable_id select transcript_id, concat( 'TETRAT',lpad(transcript_id,11,'0')), 0, now(),now() from transcript;
+  mysql>insert into exon_stable_id select exon_id, concat( 'TETRAE',lpad(exon_id,11,'0')), 0, now(),now() from exon;
+  mysql>insert into translation_stable_id select translation_id, concat( 'TETRAP',lpad(translation_id,11,'0')), 0, now(),now() from translation;
+
+You would replace the string TETRA with a suitable identifier for your
+genome.
+
+You also need to setup an ensembl.init registry file and a compara
+registry file
+
+The format of the ensembl.init should be in your home directory and
+look something like
+
+#
+# configuration file used by Bio::EnsEMBL::Registry::load_all method
+# to store/register all kind of Adaptors.
+
+use strict;
+use Bio::EnsEMBL::Utils::ConfigRegistry;
+use Bio::EnsEMBL::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+
+my @aliases;
+
+new Bio::EnsEMBL::DBSQL::DBAdaptor(-host => 'genebuild1',
+                                   -user => 'ensro',
+                                   -port => 3306,
+                                   -species => 'Tetraodon nigroviridis',
+                                   -group => 'core',
+                                   -dbname => 'lec_tetraodon_8_compara_gene');
+
+@aliases = ('Fresh water pufferfish', 'Tetraodon', 'tetraodon');
+
+Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(-species => "Tetraodon nigroviridis",
+                                               -alias => \@aliases);
+
+
+new Bio::EnsEMBL::DBSQL::DBAdaptor(-host => 'ens-livemirror',
+                                   -user => 'ensro',
+                                   -port => 3306,
+                                   -species => 'Homo sapiens',
+                                   -group => 'core',
+                                   -dbname => 'homo_sapiens_core_48_36j');
+
+@aliases = ('H_Sapiens', 'homo sapiens', 'Human', 'Homo_Sapiens','Homo_sapiens', 'Homo', 'homo', 'human');
+
+Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(-species => "Homo sapiens",
+                                               -alias => \@aliases);
+
+
+new Bio::EnsEMBL::DBSQL::DBAdaptor(-host => 'ens-livemirror',
+                                   -user => 'ensro',
+                                   -port => 3306,
+                                   -species => 'Gasterosteus aculeatus',
+                                   -group => 'core',
+                                   -dbname => 'gasterosteus_aculeatus_core_48_1e');
+
+@aliases = ('Stickleback');
+
+Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(-species => "Gasterosteus aculeatus",
+                                               -alias => \@aliases);
+
+
+new Bio::EnsEMBL::DBSQL::DBAdaptor(-host => 'ens-livemirror',
+                                   -user => 'ensro',
+                                   -port => 3306,
+                                   -species => 'Danio rerio',
+                                   -group => 'core',
+                                   -dbname => 'danio_rerio_core_48_7b');
+
+@aliases = ('Zebrafish', 'zebra');
+
+Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(-species => "Danio rerio",
+                                               -alias => \@aliases);
+
+new Bio::EnsEMBL::Compara::DBSQL::DBAdaptor(-host => 'genebuild7',
+                                            -user => 'ensro',
+                                            -port => 3306,
+                                            -species => 'Compara',
+                                            -dbname => 'lec_tetraodon_8_compara');
+
+@aliases = ('compara_for_tetraodon', 'compara');
+
+Bio::EnsEMBL::Utils::ConfigRegistry->add_alias(-species => "Compara",
+                                               -alias => \@aliases);
+
+This needs connection details to the compara database and all the core
+databases you wish to fetch genes from.
+
+You also need a compara registry file the
+standard form for which can be found here
+ensembl-compara/scripts/pipeline/compara-hive-homology.conf
+
+This needs to contain details about what homology runs you are
+actually doing:
+
+[
+  { # information to connect to compara/hive database
+    TYPE => COMPARA,
+    '-host'     => "host",
+    '-port'     => "3306",
+    '-user'     => "user",
+    '-pass'     => "*****",
+    '-dbname'   => "lec_tetraodon_8_compara",
+    '-adaptor'  => "Bio::EnsEMBL::Compara::DBSQL::DBAdaptor",
+  },
+  { TYPE => HIVE,
+    'hive_output_dir'      => "/lustre/scratch1/ensembl/lec/code/tetraodon/orthology/hive",
+    # IMPORTANT: The hive system can generate an awful lot of log outputs that are dumped in
+    # the hive_output_dir. When a pipeline runs fine, these are not needed and can take a lot of
+    # disk space as well as generate a large number of files. If you don't want log outputs (recommended),
+    # then just don't specify any hive_output_dir (delete or comment the line or set to "" if you don't want
+    # any STDOUT/STDERR files)
+  },
+  { TYPE => 'BLASTP_TEMPLATE',
+    '-program'         => 'wublastp',
+    '-program_version' => '1',
+    '-program_file'    => 'wublastp',
+    '-parameters'      => "{options=>'-filter none -span1 -postsw -V=20 -B=20 -sort_by_highscore -warnings -cpus 1'}",
+    '-module'          => 'Bio::EnsEMBL::Compara::RunnableDB::BlastComparaPep',
+    '-module_version'  => undef,
+    '-gff_source'      => undef,
+    '-gff_feature'     => undef,
+    'fasta_dir'        => "/lustre/scratch1/ensembl/lec/code/tetraodon/orthology/compara",
+  },
+
+  { TYPE => UNIPROT,
+   'srs'    => 'SWISSPROT',
+   'accession_number' => 1
+  },
+  { TYPE => UNIPROT,
+    'srs'    => 'SPTREMBL',
+   'accession_number' => 1
+  },
+
+  { TYPE => dNdS,
+    'codeml_parameters' => do('/nfs/acari/abel/src/ensembl_main/ensembl-compara/scripts/homology/codeml.ctl.hash'),
+    # genome_db_id for which dNdS has to be calculated by pairs, the passed string MUST be less than 255 char to fit in the input_id field of the analysis_job table
+    'species_sets' => '[[]]',
+  },
+
+  { TYPE => HOMOLOGY,
+    'species_sets' => '[[1,2,3,4]]'
+  },
+  { TYPE => SPECIES,
+    'abrev'          => 'tetraodon',
+    'genome_db_id'   => 1,
+    'taxon_id'       => 99883,
+    'phylum'         => 'Vertebrata',
+    'module'         => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
+    'host'           => "genebuild1",
+    'port'           => 3306,
+    'user'           => "ensro",
+    'dbname'         => "lec_tetraodon_8_compara_gene",
+  },
+
+  { TYPE => SPECIES,
+    'abrev'          => 'human',
+    'genome_db_id'   => 2,
+    'taxon_id'       => 9606,
+    'phylum'         => 'Vertebrata',
+    'module'         => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
+    'host'           => "ens-livemirror",
+    'port'           => 3306,
+    'user'           => "ensro",
+    'dbname'         => "homo_sapiens_core_48_36j",
+  },
+
+  { TYPE => SPECIES,
+    'abrev'          => 'stickleback',
+    'genome_db_id'   => 3,
+    'taxon_id'       => 69293,
+    'phylum'         => 'Vertebrata',
+    'module'         => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
+    'host'           => "ens-livemirror",
+    'port'           => 3306,
+    'user'           => "ensro",
+    'dbname'         => "gasterosteus_aculeatus_core_48_1e",
+  },
+
+  { TYPE => SPECIES,
+    'abrev'          => 'zebra',
+    'genome_db_id'   => 4,
+    'taxon_id'       => 7955,
+    'phylum'         => 'Vertebrata',
+    'module'         => 'Bio::EnsEMBL::DBSQL::DBAdaptor',
+    'host'           => "ens-livemirror",
+    'port'           => 3306,
+    'user'           => "ensro",
+    'dbname'         => "danio_rerio_core_48_7b",
+  },
+  { TYPE => END }
+]
+
+This file needs to contain pointers to all the databases being used
+like the ensembl_init file. It also needs write access for the compara
+database. Ypu should leave out any of the species ids for the dn/ds
+calculation as this isn't needed but you need to have a list of all of
+them in the homology section.
+
+Note the biotypes in all your databases for the genes you want
+analysed needs to be protein_coding.
+
+Once the config is setup you need to run 2 scripts, both in
+ensembl-compara/scripts/pipeline.
+
+  comparaLoadGenomes.pl -conf /path/to/config/compara-hive-homology.conf  -dbhost host -dbport 3306 -dbname compara_db -dbuser user -dbpass ******
+
+This setups up the compara database with all the information about the
+genomes being assessed.
+
+Then you run:
+
+  perl loadHomologySystem.pl -conf /path/to/config/compara-hive_homology.conf -dbhost host -dbport 3306 -dbname compara_db -dbuser user -dbpass *****
+
+Now you are ready to get the system running. This actually uses
+the ensembl-hive system and the control script is found in
+ensembl-hive/scripts
+
+  perl beekeeper.pl -url mysql://username@host:3306/lec_tetraodon_8_compara -loop
+
+Once this has run you can run the various different orthology
+assessment code. Before doing this it is a good idea to backup your
+reference database and your config files as it does alter things
+automatically to get the analyses running.
+
+First there are two config files in
+Bio::EnsEMBL::Analysis::Config::GeneBuild, OrthologueEvaluator and
+OrthologueEvaluatorExonerate.
+
+OrthologueEvaluator contains both generic config and analysis specific
+config.
+
+LOCATION_OF_COMPARA_REGISTRY_FILE, This should be the path to your ensembl_init file.
+SEQUENCE_DUMP_BASE_DIR,  This should be the path to dump sequence to.
+RUN_FIND_MISSING_ORTHOLOGUES, This binary flag switches on the missing orthologue analysis which looks for 1 to 1 orthologues present in all other species but missing in the query species 
+RUN_FIND_PARTIAL_GENES, This binary flag switches on the partial orthologue analysis. This looks for 1 to 1 orthologues where the gene in the query genome seems significantly shorter than the structure in the other genomes.
+RUN_FIND_SPLIT_GENES, This binary flag switched on the split gene analysis. This looks for 1 to 1 orthologues where the gene in the query genome is significantly longer than the structure in other genomes.
+RUN_FIND_FALSE_INTRONS,  This is a binary flag which switches on the find false intron analysis. This looks for genes which have introns that overlap peptide sequences in other homologous gene structures
+QUERY_SPECIES,   This should be the name for your query species, it needs to match what the species is called in the compara database.
+
+Following this there are the analysis specific configs. You need to
+fill out the configs for which ever analyses you have switched on.
+
+For FindMissingOrthologues we have these variables:
+
+DEFAULT_GENE_BIOTYPES, This should be the standard biotype for the genes in your databases. (Most likely protein_coding)
+ANALYSIS_SETS, This should be a hash of arrays. The structure will look like
+{         
+  human_stickleback => ['Homo sapiens', 'Gasterosteus aculeatus'],
+  human_zebra => ['Homo sapiens', 'Danio rerio'], 
+}
+
+Each analysis should point to the pair of species which should be
+compared to your query species and again these names should match the
+names in the compara database.
+
+For FindPartialGenes we have these variables
+
+DEFAULT_GENE_BIOTYPES, This should be the standard biotype for the genes in your databases. (Most likely protein_coding)
+ANALYSIS_SETS =>
+{
+  find_partials =>
+   {
+    'MAIN_ORTH'   => 'Homo sapiens',   &nbsp;     
+    'TEST_SPEC_1' => 'Gasterosteus aculeatus',
+    'TEST_SPEC_2' => 'Danio rerio',
+    'IGNORE_ORTHOLOGUES_ON_MT_REGIONS' => 1 , 
+    'RATIO_MAIN_vs_QUERY' =>        0.75,
+    'RATIO_MAIN_vs_SPEC_1_LOW' =>   0.9,
+    'RATIO_MAIN_vs_SPEC_1_HIGH' =>  1.1,
+    'RATIO_MAIN_vs_SPEC_2_LOW' =>   0.9,
+    'RATIO_MAIN_vs_SPEC_2_HIGH' =>  1.1,
+    },
+}
+
+This looks at the ratio of the lengths between the orthologues
+in the Query species and the Main orth species. If this ratio is
+significantly different from those between the Main orth species and
+the test species then this gene is considered partial.
+
+FindSplitGenes we have these variables
+
+ANALYSIS_SETS =>
+{  
+  hum_stick_split=>
+       {
+         'INFORMANT' => 'Homo sapiens',         
+         'INFORMANT_PERC_COV' => 20, 
+         'TARGETTED' => 'Gasterosteus aculeatus',
+         'TARGETTED_PERC_COV' => 70,
+      },
+  hum_danio_split=>
+       {
+        'INFORMANT' => 'Homo sapiens',         
+        'INFORMANT_PERC_COV' => 20, 
+        'TARGETTED' => 'Danio rerio',
+        'TARGETTED_PERC_COV' => 70,
+        },
+},
+
+This structure contains logic names for each analysis to be run
+then information about the pair of species being used to make the
+assessment. Again this looks at the lengths in the Query species
+compared to the comparison pair and makes judgements if 2 genes should
+be merged.
+
+FindFalseIntrons uses the variables:
+
+DEFAULT_GENE_BIOTYPES, name of default biotype
+ANALYSIS_SETS =>
+{
+FindFalseIntrons_hum_mus =>
+          {
+           PRIMARY_ORTH   => 'Homo sapiens',
+           SECONDARY_ORTH => 'Mus musculus',
+          }
+},
+
+Again the Analysis set is keyed on logic name and the primary and
+secondary orth are the species as found in the compara database you
+wish to compare your query species to.
+
+You also need the OrthologueEvaluatorExonerate.
+
+This contains details of the Exonerate runs the orthologue recovery
+process undertakes:
+
+QUERYTYPE, This should be protein as the main orthologue protein sequences are the ones exonerated against the genome
+QUERYSEQS, This is info for the real Exonerate Config file
+IIDREGEXP, This is a regex for the automatically generated input ids
+OUTDB, This should either be a string pointing to a database in Databases.pm or a hash constructor for the Database Adaptor
+COVERAGE_BY_ALIGNED, This is the same as the variable in the Exonerate2Genes config and is generally set to one.
+OPTIONS, These are the command line options for exonerate and we normally use "--model protein2genome --forwardcoordinates FALSE --softmasktarget TRUE --exhaustive FALSE  --bestn 1",
+
+Once these config files are filled out the Orthologue
+Evaluator is run is a different manner to the majority of
+variables. There is an automated setup which handles setting
+up the config for the process. This script can be found in
+ensembl-pipeline/scripts. To run it you need a perl module called PPI
+http://search.cpan.org/~adamk/PPI-1.203/lib/PPI.pm.
+
+The script itself is called setup_orthologue_evaluator.pl and is run like the
+following:
+
+  setup_orthologue_evaluator.pl -dbhost host -dbuser user -dbpass **** -dbport 3306 -dbname my_database
+
+It just runs with the database arguments for your pipeline database
+taking all the other information from your exisiting config and
+environment. The one config file it doesn't fill out is the pipeline
+config Bio::EnsEMBL::Pipeline::Config::BatchQueue. If you want
+specific settings or output directories for these analyses you need
+to fill this out on the basis of the analyses it has now put in your
+reference database analysis table.
+
+Now you can run the rulemanager. There will be pre analysis for each
+of the processes you have chosen to run which you must have run
+first.The you can run the specific analyses.
+
+The setup_orthologue_evaluator takes care of input ids for you so you
+don't need to run any addition scripts for this.
+
+13.17 GeneBuilder
+==
+
+The Genebuilder is the algorithm which collapses the transcript set
+into a non redundant set of genes with alternative splice forms.
+Transcripts are clustered such that all transcripts in a Gene
+("cluster") have at least one coding exon that overlaps a coding
+exon from at least one other transcript in the cluster.
+(Species built before approximately mid-2007 would have clustered 
+on all exons and not just coding exons.)
+
+As with most of our code there is a Config file, Runnable and
+RunnableDB file for this process all called GeneBuilder found in
+Config/GeneBuild, Runnable and RunnableDB respectively.
+
+Previously we would only run this process once at the end of the
+Genebuild but more recently we have started using it not only to allow
+us to run the orthologue recovery process but also help assess the
+gene set as we run the different analyses.
+
+The config file shares the standard structure of a hash of hashes, a
+default carrying the default setting then analysis specific info in
+hashes keyed on logic name.
+
+INPUT_GENES, This is a hash of arrays the keys being names of databases from Databases.pm and the arrays containing the list of biotypes which should be fetched from that database.
+e.g  UTR_DB => ['similarity', 'BestTargetted', 'ccds_gene', 'UTR_Genes', 'Blessed_UTR_Genes'],
+OUTPUT_DB, The name of the database the output genes will be written to.
+OUTPUT_BIOTYPE, The biotype assigned to output genes.
+MAX_TRANSCRIPTS_PER_CLUSTER, The maximum number of transcripts in a cluster. More than this are trimmed.
+MIN_SHORT_INTRON_LEN, The minimum short intron length, introns shorter than this are likely to be real frameshifts and shouldn't be penalized.
+MAX_SHORT_INTRON_LEN, The maximum short intron length, longer than this they are more likely to be real introns
+BLESSED_BIOTYPES, This is a hash of biotypes for blessed genes. These transcripts need to make it through the entire process without being thrown away and this needs checking.
+MAX_EXON_LENGTH, This is maximum exon length and exons longer than this are penalized.
+
+This should be run on full chromosomes if possible to ensure the
+clustering is correct. There are instructions further up as to how to
+create input ids for this.
+
+13.18 PseudoGene
+==
+
+This process identifies processed pseudogenes in our build. It
+actually is two separate runnables but the first must be run for the
+second to work. The criteria used for pseudogene labelled include
+looking at intron length, transcripts where all introns are less than
+15bps tend to be pseudogenes. We also look at repeat content if a
+gene is 99% covered by a repeat it is deleted but if the some introns
+of the transcript are covered by more than 80% repeat and the other
+introns are all short then we label the transcript as a pseudogene.
+Finally we also look for retrotransposed single exon genes. This is
+done by blasting the single exon peptides against the multi exon
+peptides and if there is a high similarity between a single exon and a
+multi exon gene it is highly likely to be a retrotransposed gene.
+
+There is one config file for both processes.
+Bio::EnsEMBL::Analysis::Config::Pseudogene.
+
+Its variables are
+
+PS_INPUT_DATABASE, The database from Databases.pm to read your genes from
+PS_OUTPUT_DATABASE, The database to write your genes to.
+PS_FRAMESHIFT_INTRON_LENGTH, The length of a frameshift intron, we generally go for 15bp
+PS_MAX_INTRON_LENGTH, The maximum intron length
+PS_REPEAT_TYPES, an array ref of repeat types to consider
+PS_MAX_INTRON_COVERAGE, The maximum intron coverage by repeats
+PS_MAX_EXON_COVERAGE, The maximum exon coverage by repeats
+PS_NUM_FRAMESHIFT_INTRONS, The number of frameshift i
+PS_NUM_REAL_INTRONS  => 1,
+PS_BIOTYPE  => 'protein_coding',
+PS_WRITE_IGNORED_GENES to 0.
+PS_WRITE_IGNORED_GENES => 1,
+PS_PERCENT_ID_CUTOFF   => 40,
+PS_P_VALUE_CUTOFF   => '1.0e-50',
+PS_RETOTRANSPOSED_COVERAGE   => 80,
+PS_ALIGNED_GENOMIC  => 100,
+PS_PSEUDO_TYPE      => 'pseudogene',
+PS_REPEAT_TYPE      => '',
+SINGLE_EXON      => 'spliced_elsewhere',
+INDETERMINATE    => '',
+RETROTRANSPOSED  => '',
+RETRO_TYPE       => 'retrotransposed',
+SPLICED_ELSEWHERE_LOGIC_NAME => 'spliced_elsewhere',
+PSILC_LOGIC_NAME => 'Psilc',
+PS_SPAN_RATIO          => 3,
+PS_MIN_EXONS           => 4,
+PS_MULTI_EXON_DIR       => "/path/to/my/blast/directory/" ,
+PS_CHUNK => '50',
+DEBUG => '1',
+
+There is also config for a process called PSLIC but this can be
+ignored.
+
+Before you run the process you must add a table
+(ensembl-pipeline/sql/flag.sql) to your pipeline database. This table
+is used by the PseudoGene_DB process to identify genes which are later
+needed for the Spliced_Elsewhere stage.
+
+The first runnabledb which must be run is
+Bio::EnsEMBL::Analysis::PseudoGene_DB. This is generally run on
+chromosomes or other top level pieces.
+
+Once this has been run you can run a setup script for
+SplicedElsewhere. This creates the input ids for Spliced_elsewhere
+which should be a type of their own and also setups the blast
+database used by SplicedElsewhere. This script is found in
+ensembl-analysis/scripts/Pseudogenes.
+
+  prepare_SplicedElsewhere.pl -pseudogene_logic_name Pseudogene -SE_logic_name SubmitSpliced [-ref_db reference_db]
+
+By default the script uses the REFERENCE_DB entry in the Databases.pm
+file, otherwise it uses the database given on the commandline.
+
+We generally run the pseudogene annotation twice. First before the
+orthology pipeline is run to ensure pseudogene predictions don't
+mislead the process and second before the final gene set is handed
+over to relabel those predictions which are pseudogenes.
+
+=====================
+
+This finishes the overview of what the essential parts of the
+genebuild process are and how to use them. Next are sections about
+pieces of code which can aid in building on genomes with limited
+evidence or filtering down genesets to improve their quaility or
+additional code required for the process.
+
+13.19 ensembl-killlist
+==
+
+This is another api which can be sourced from the sanger cvs
+respository. The function of this repository is to create
+and access a database which contains a list of protein and
+cdna identifiers which we do not wish to use in all or part
+of our build process. This api is documented more fully here
+ensembl-doc/pipeline_docs/using_kill_list_database.txt.You will need a
+copy of the code in place before you can run the genebuild even if you
+don't have a database setup.
+
+13.20 Combining annotation sets: IncrementalBuild and LayerAnnotation
+==
+
+In species which lack much specific evidence sometimes we align many
+different data sets to the genome then assess the quality of each.
+This can led to a situtation where you need to combine transcript
+models into a set to be pushed through the next stage in the build
+either to find missing models or assess which models are better.
+There are two runnabledbs which can make this process easier. The
+first, IncrementalBuild takes a very simplistic approach comparing
+two gene sets and taking those in the secondary set which do not
+overlap the primary set. Its runnabledb and config file are both
+called IncrementalBuild.
+
+The config file follows the same structure as the majority of our
+The config files with a default hash containing variables and logic
+The name hashes to specify analysis specific details. variables are:
+
+PRIMARY_BIOTYPES, An array of biotypes to take from the primary database to make up the primary gene set.
+SECONDARY_BIOTYPES, An array of biotypes to take from the secondary database to make up the secondary gene set.
+PRIMARY_DB, The name of the primary database in Databases.pm.
+SECONDARY_DB, The name of the secondary database in Databases.pm
+OUTPUT_DB, The name of the output database in Databases.pm
+SECONDARY_FILTER , This is an optional hash which can point to an additional filter for the secondary gene set. The object field should point to a perl object path and the parameters hash should contain any constructor parameters needed by the filter. The filter can work in any way you chose it must though implement a method called filter_genes which takes in the secondary gene set as an arrayref and returns the filtered genes.
+SECONDARY_PADDING, This is a currently unused variable in the config
+PRE_FILTER, This binary switch indicates the filter should be run before the comparison of the two gene sets.
+POST_FILTER, The binary switch indicates the filter should be run after the comparison of the gene sets.
+STORE_PRIMARY, This binary switch indicates the primary genes as well as the accepted secondary genes.
+CALCULATE_TRANSLATION, This binary switch causes the code to look for the longest orf in the accepted transcripts. This is useful if you are laying on transcript structures from exonerate which don't necessarily have a complete open reading frame
+DISCARD_IF_NO_ORF, If translations are being computed this will throw away structures which don't have an orf.
+NEW_BIOTYPE , This string is assigned to the accepted genes as a biotype if they are taken.
+
+This is generally run on whole chromosomes to avoid boundaries
+breaking up gene clusters being a problem.
+
+LayerAnnotation
+
+LayerAnnotation is a more complex piece of code which can assess
+multiple gene sets in a more flexible manner. In this system layers
+of specific gene types are defined as the ways in which they are to
+be compared to each other. This code was original written to allow
+intergration of manually curated IG gene structures into our standard
+gene set.
+
+The RunnableDB and Config file are as usual both called
+LayerAnnotation.
+
+The config file follows the standard hash of hashes one keyed by
+default the rest by logic name structure of the majority of our config
+files. The variables are:
+
+TARGETDB_REF, This is the name of the output database in Databases.pm.
+SOURCEDB_REFS, This is an array of database names which genes will be fetched from. The code tries to fetch all biotypes in the layers from each source database specified so you need to ensure you don't have overlapping biotypes which are not representing the same type of data.
+LAYERS, This is a array of hashes. The hashes should appear in order of priority, the most important layer being defined first. Each hash can contain several variables. 3 are essential the others are options.
+ID, This is the name of the layer and how the layer is refered to by other layers when defining filters.
+BIOTYPES, This is an array of biotypes which should be contained in a layer
+DISCARD, This is a binary flag which defines if the genes from the layer which are kept are to be stored or not. Normally this is set to 0 which means the genes are kept but if for example you had a gene set which was pseudogenes or bad predictions and you didn't want to keep things which overlapped with these structures but you also didn't want to keep these structures then you could set this flag to 1.
+These 3 variables are compulsory. You also can add these two other variables.
+FILTER_AGAINST, This is an array of layer names (as defined by ID). Your first layer is unlikely to define this but all subsequent layers probably should be filtered against the first. Any layer which is filtered against needs to appear higher up in the array of hashes. If you filter against genes which have already been filtered you only compare to the genes which made it though that layers comparison.
+FILTER, This must be an object. If this isn't defined LayerAnnotation uses its generic filter which compares the two sets of genes on the basis of exon overlap throwing away anything in the current layer which overlaps with exons in the comparison set. If you define an object you can use different filtering rules though there is no way of defining constructor arguments. The filter object must implement a method called filter which takes two arrayref of genes, first the layer then the comparision set and must return an arrayref of genes which are those in the layer which have been accepted.
+
+An example of what this structure may look like is
+
+LAYERS => [
+                 {
+                    ID => 'LAYER1',
+                    BIOTYPES => 'IG_Genes',
+                    DISCARD => 0,
+                 },
+                 {
+                    ID => 'LAYER2',
+                    BIOTYPES => 'Bad_Genes',
+                    DISCARD => 1,
+                    FILTER_AGAINST => ['LAYER1'],
+                 },
+                 {
+                    ID => 'LAYER3,
+                    BIOTYPES => 'targetted_genes',
+                    DISCARD => 0,
+                    FILTER_AGAINSTS => ['LAYER1', 'LAYER2'],
+                 },
+                 {
+                    ID => 'LAYER4',
+                    BIOTYPES => 'similarity_genes',
+                    DISCARD => 0,
+                    FILTER_AGAINSTS => ['LAYER1', 'LAYER2', 'LAYER3'],
+                    FILTER => 'Example::SimilarityFilter',
+                 }
+                ]
+This setup means that your final gene set would contain all the
+IG_Genes, No Bad Genes, No Targetted Genes which shared exon overlap
+with IG or Bad genes and No Similarity Genes which failed the
+Example::SimilarityFilter criteria when compared against the IG_Genes
+and succesfully filtered Bad and Targeted Genes.
+
+Again this code is normally run on Chromosomes.
+
+These two pieces of code can help construct a higher quality gene set
+from the initial alignments of lots of different evidence sources.
+
+13.21 CopyGenes
+==
+
+A useful utility piece of code is the CopyGenes RunnableDB. When
+dealing with a large number of genes simply copying them between
+databases can be quite time consuming. CopyGenes allows this to be
+done in parallel.
+
+This RunnableDB doesn't rely on any config additional to Databases.pm
+but it does need information in the parameters column of the analysis
+tables. This information should be:
+
+-source_db => GENEBUILD_DB,-target_db => COMPARA_GENE_DB,-biotype => with_utr
+
+Where source_db is the database the genes are going to come from,
+target_db is the database genes are going to go to and biotype is the
+biotype of the genes to be copied.
+
+Again this is run on whole chromosomes.
+
+13.22 Viral genes, anti_virus.pl
+==
+
+The code to use pfam domains to identify viral genes can be found in
+ensembl_analysis/scripts/viral_pseudogenes/anti_virus.pl.
+
+An example command line is:
+
+  perl anti_virus.pl -dbhost host -dbuser user -dbname my_db -kill_list ensembl_analysis/scripts/viral_pseudogenes/domain_kill_list.txt -click_list path/to/html/file -dir where/to/write/the/output
+
+13.23 Gene Set QC
+==
+
+Once you have a gene set there are many things you can do to qc the
+set. The first is to run buildchecks. This is a script and config file
+in the ensembl-analysis code
+
+The script is ensembl-analysis/scripts/buildchecks/check_GBGenes.pl,
+an example commandline is:
+
+  perl check_GBGenes.pl -gene_database GENEBUILD_DB -coord_system chromosome -chromosome 1 -transcripts
+
+This script needs the Databases.pm config and an extra config file to
+run.
+
+Bio::EnsEMBL::Analysis::Config::GeneBuild::BuildChecks
+
+It contains these variables
+
+MINSHORTINTRONLEN, Introns shorter than this could be representing frameshifts
+MAXSHORTINTRONLEN, Introns between this and the shorter length are considered suspicious
+MINLONGINTRONLEN, Introns longer than this are likely to be false      
+MINSHORTEXONLEN, Introns shorter than this could be due to a frameshift
+MAXSHORTEXONLEN,  Exons  between this and the shorter length are considered suspicious
+MINLONGEXONLEN, Exons longer than this are probably false
+MINTRANSLATIONLEN,  Translations shorter than this are likely to be wrong
+MAX_EXONSTRANSCRIPT, Transcripts with greater than this number of exons are likely to be wrong
+MAXTRANSCRIPTS, Genes with more transcripts than this are incorrect.
+MAXGENELEN, Genes with a longer genomic extent than this are suspicious
+IGNOREWARNINGS, This is a binary flag as to whether to ignore warnings. By default it is left on.
+
+This code checks various factors about a gene set and reports genes
+which are in someway suspcious, they have the wrong phases, contain
+stop codons, overlap with other genes and similar other checks
+
+This document should of given you an overview of the genebuild process
+and the code used to run it. There is more documentation found in
+the cvs module ensembl-doc and you can also email questions to
+ensembl-dev@ebi.ac.uk .
+
+===============================
+14. Frequently Asked Questions
+===============================
+(i) The rulemanager has submitted my jobs to the compute farm, but they are all pending. Why are my jobs not running?
+
+There are a number of possible reasons. You could start with the following checks:
+- Is your compute farm very busy? Do 'bjobs -l' to look for a pending reason.
+- BatchQueue.pm config file may have an error
+- Does the queue that you have submitted your jobs to exist? 
+- Can your memory requirements be satisfied by the machines on your farm? If you requested too much memory, and no machine on your farm can satisfy the requirements, then the job will never run.
+- Database resource requirements. If too low, and other people are using the same host, then your jobs might not run. 
+- Pre-exec script (Copy command from output of 'bjobs -l'). Does it fail? I could fail if your Perl installation is not in the default location
+- test_RunnableDB. Is it successful?
+- Run the monitor script, or look in your job table, to make sure that the jobs are not failing 
+
+(ii) Some of my jobs have status AWOL. Why is this?
+
+Usually our jobs only go AWOL when they have lost a connection to the machine that they have been running on, so the rulemanager loses track of them and doesn't know whether they have succeeeded or failed. You can run the awol_check script to check if any of your jobs are AWOL.
+
+(iii) Healthchecks complain that I have duplicate exons. What should I do?
+
+Duplicate exons are not a disaster; they can be left as they are. 
+
+The way we usually work is that if 2 transcripts from the same gene share an exon, then that exon is only stored once (to save space in the database). You can delete one of the duplicate exons if you like, but then you'll need to fiddle with the exon_transcript table and make sure that the transcript points to the exon that wasn't deleted. (Otherwise you'll be missing an exon in one of your transcripts.) 
+
+(iv) What biotypes should I use?
+
+It is useful to use a different biotype from each analysis that you run, either by specifying the biotype in the appropriate config file or by manually updating your database according to the analysis_id. Models with different biotypes can be displayed in different colours in Apollo.
+
+Some analyses will let you specify a biotype in the appropriate config file.
+eg. Bio/EnsEMBL/Analysis/Config/GeneBuild/BlastMiniGenewise.pm,
+Bio/EnsEMBL/Analysis/Config/Pseudogene.pm,
+Bio/EnsEMBL/Analysis/Config/GeneBuild/UTR_Builder.pm,
+Bio/EnsEMBL/Analysis/Config/GeneBuild/TranscriptConsensus.pm
+
+Nearing the end of a genebuild you may have a number of different biotypes in your database, although all transcripts are protein-coding. Running the GeneBuilder code will merge transcripts from various analyses and give all final genes a biotype of 'ensembl'. Running the pseudogene code will update the biotypes of pseudogenes.
+
+Once the gene set is finalised then you can update the biotype of 'ensembl' genes to 'protein_coding' manually.
+
+
+===============================
+15. References
+===============================
+1. Pmatch, (R Durbin, unpublished)
+2. Automated generte of heuristics for biological sequence comparison. GS Slater, E Birney BMC Bioinformatics 2005 Feb 15;6:31
+3. Genewise and Genomewise E Birney, M Clamp Genome Res. 2004 May;14(5):988-95
+4. The Ensembl Gene Annotation System. Curwen V, Eyras E, Andrews TD, Clarke L, Mongin E, Searle SM, Clamp M. Genome Res. 2004 May;14(5):942-50
+
