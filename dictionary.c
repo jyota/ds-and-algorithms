@@ -21,10 +21,64 @@
 
 typedef enum { false, true } bool;
 
+typedef struct tree {
+    char *item;
+    struct tree *parent;
+    struct tree *left;
+    struct tree *right;
+} tree;
+
 typedef struct list {
     char *item;
     struct list *next;
 } list;
+
+tree *search_tree(tree *l, char *x)
+{
+    if (l == NULL) return(NULL);
+
+    int strcmp_result = strcmp(x, l->item);
+
+    if(strcmp_result == 0){
+        return(l);
+    }else if(strcmp_result < 0){
+        return(search_tree(l->left, x));
+    }else{
+        return(search_tree(l->right, x));
+    }
+}
+
+void insert_tree(tree **l, char *x, tree *parent)
+{
+    tree *p;
+
+    if(*l == NULL){
+        p = malloc(sizeof(tree));
+        p->item = strdup(x);
+        p->left = NULL;
+        p->right = NULL;
+        p->parent = parent;
+        *l = p;
+        return;
+    }
+
+    int strcmp_result = strcmp(x, (*l)->item);
+    
+    if(strcmp_result < 0){
+        insert_tree(&((*l)->left), x, *l);
+    }else{
+        insert_tree(&((*l)->right), x, *l);
+    }
+}
+
+void traverse_tree_print(tree *l)
+{
+    if(l != NULL){
+        traverse_tree_print(l->left);
+        printf("%s\n", l->item);
+        traverse_tree_print(l->right);
+    }
+}
 
 void free_linked_list(list **l)
 {
@@ -83,6 +137,33 @@ void parse_text_dictionary_list(char *text)
     }
 }
 
+void add_or_skip_string_bst(tree **l, char *string)
+{
+    if(search_tree(*l, string) == NULL){
+        printf("%s\n", string);
+        insert_tree(l, string, NULL);
+    }
+}
+
+void parse_text_dictionary_bst(char *text)
+{
+    tree *dictionary = malloc(sizeof(tree));
+    char *word;
+    bool first_time = true;
+
+    for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
+        if(first_time){
+            printf("%s\n", word);
+            dictionary->item = strdup(word);
+            dictionary->left = NULL;
+            dictionary->right = NULL;    
+            first_time = false;
+        }else{
+            add_or_skip_string_bst(&dictionary, word);
+        }
+    }    
+}
+
 char *read_file(char *filename)
 {
     char *returnable = NULL;
@@ -130,7 +211,8 @@ char *read_file(char *filename)
 int main(int argc, char *argv[])
 {
     char *file_text = read_file("genebuild.txt");
-    parse_text_dictionary_list(file_text);
+    //parse_text_dictionary_list(file_text);
+    parse_text_dictionary_bst(file_text);
 
     return 0;
 }
