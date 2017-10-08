@@ -60,23 +60,30 @@ redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
 void recolor_redblack_as_needed(redblack_tree *x)
 { 
     redblack_tree *uncle = NULL;
+    redblack_tree *grandparent = NULL;
+    
     if(x->parent == NULL){
         x->color = Black;
         return;
     }
-    
-    if(x->parent->left == x){
-        uncle = x->parent->right;
-    }else{
-        uncle = x->parent->left;
+
+    if(x->parent->parent != NULL){
+        grandparent = x->parent->parent;
+    } else {
+        return;
     }
+
+    if(grandparent->left == x->parent){
+        uncle = grandparent->right;
+    }else{
+        uncle = grandparent->left;
+    }
+
     if(uncle != NULL){
         x->parent->color = Black;
         uncle->color = Black;
-        if(x->parent->parent != NULL && x->parent->parent->parent != NULL){
-            x->parent->parent->color = Red;
-            recolor_redblack_as_needed(x->parent->parent);
-        }
+        grandparent->color = Red;
+        recolor_redblack_as_needed(grandparent);
     }
 }
 
@@ -86,14 +93,20 @@ void redblack_insert_adjustment(redblack_tree *l)
         return;
     }else{
         redblack_tree *uncle = NULL;
-        if(l->parent->left == l){
-            uncle = l->parent->right;
+        redblack_tree *grandparent = NULL;
+        if(l->parent->parent != NULL) grandparent = l->parent->parent;
+
+        if(grandparent->left == l->parent){
+            uncle = grandparent->right;
         }else{
-            uncle = l->parent->left;
+            uncle = grandparent->left;
         }
         if(uncle != NULL){
             if(uncle->color == Red){
-                recolor_redblack_as_needed(l);
+                l->parent->color = Black;
+                uncle->color = Black;
+                grandparent->color = Red;        
+                recolor_redblack_as_needed(grandparent);
             }else{
                 // handle rotations..
             }
