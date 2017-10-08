@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 
 typedef enum { false, true } bool;
 typedef enum { Red, Black } redblack;
@@ -42,6 +43,13 @@ typedef struct list {
     struct list *next;
 } list;
 
+void insert_case1(redblack_tree *x);
+void insert_case2(redblack_tree *x);
+void insert_case3(redblack_tree *x);
+void insert_case4(redblack_tree *x);
+void insert_case5(redblack_tree *x);
+
+
 redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
 {
     if (l == NULL) return(NULL);
@@ -57,143 +65,99 @@ redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
     }
 }
 
-void recolor_redblack_as_needed(redblack_tree *x)
-{ 
-    redblack_tree *uncle = NULL;
-    redblack_tree *grandparent = NULL;
-    
-    if(x->parent == NULL){
-        x->color = Black;
-        return;
-    }
-
-    if(x->parent->parent != NULL){
-        grandparent = x->parent->parent;
+void replace_node(redblack_tree *old, redblack_tree *new) {
+    if (old == old->parent->left){
+        old->parent->left = new;
     } else {
+        old->parent->right = new;
+    }
+    if (new != NULL) {
+        new->parent = old->parent;
+    }
+}
+
+
+void rotate_left(redblack_tree *x)
+{
+    redblack_tree *right = x->right;
+    replace_node(x, right);
+    x->right = right->left;
+    if (right->left != NULL) {
+        right->left->parent = x;
+    }
+    right->left = x;
+    x->parent = right;
+}
+
+void rotate_right(redblack_tree *x)
+{
+    redblack_tree *left = x->left;
+    replace_node(x, left);
+    x->left = left->right;
+    if (left->right != NULL) {
+        left->right->parent = x;
+    }
+    left->right = x;
+    x->parent = left;
+}
+
+void insert_case1(redblack_tree *x)
+{
+    if (x->parent == NULL){
+        x->color = Black;
+    } else {
+        insert_case2(x);
+    }
+}
+
+void insert_case2(redblack_tree *x)
+{
+    if (x->parent->color == Black){
         return;
+    } else {
+        insert_case3(x);
     }
+}
 
-    if(grandparent->left == x->parent){
-        uncle = grandparent->right;
+void insert_case3(redblack_tree *x)
+{
+    redblack_tree *uncle = NULL;
+    if(x->parent == x->parent->parent->left){
+        uncle = x->parent->parent->right;
     }else{
-        uncle = grandparent->left;
+        uncle = x->parent->parent->left;
     }
-
-    if(uncle != NULL){
+    if (uncle->color == Red) {
         x->parent->color = Black;
         uncle->color = Black;
-        grandparent->color = Red;
-        recolor_redblack_as_needed(grandparent);
+        x->parent->parent->color = Red;
+        insert_case1(x->parent->parent);
+    } else {
+        insert_case4(x);
     }
 }
 
-void left_left_case(redblack_tree *x)
+void insert_case4(redblack_tree *x)
 {
-    if(x->parent == NULL || x->parent->parent == NULL){
-        printf("ERROR: Trying to right rotate without parent/grandparent...\n");
-        return;
+    if (x == x->parent->right && x->parent == x->parent->parent->left) {
+        rotate_left(x->parent);
+        x = x->left;
+    } else if (x == x->parent->left && x->parent == x->parent->parent->right) {
+        rotate_right(x->parent);
+        x = x->right;
     }
-    redblack_tree *orig_parent_right = x->parent->right;
-    redblack_tree *orig_grandparent = x->parent->parent;
-    x->parent->parent = orig_grandparent->parent;
-    x->parent->right = orig_grandparent;
-    orig_grandparent->parent = x;
-    orig_grandparent->left = orig_parent_right;
-    orig_grandparent->color = Red;
+    insert_case5(x);
+}
+
+void insert_case5(redblack_tree *x)
+{
     x->parent->color = Black;
-}
-
-void left_right_case(redblack_tree *x)
-{
-    if(x->parent == NULL || x->parent->parent == NULL){
-        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
-        return;
-    }
-    redblack_tree *orig_grandparent = x->parent->parent;
-    redblack_tree *orig_parent = x->parent;
-
-    orig_parent->right = NULL;
-    x->left = orig_parent;
-    orig_parent->parent = x;
-    x->parent = orig_grandparent->parent;
-    orig_grandparent->parent = x;
-    x->right = orig_grandparent;
-    orig_grandparent->left = NULL;
-    orig_grandparent->color = Red;
-    x->color = Black;
-}
-
-void right_left_case(redblack_tree *x)
-{
-    if(x->parent == NULL || x->parent->parent == NULL){
-        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
-        return;
-    }
-    redblack_tree *orig_grandparent = x->parent->parent;
-    redblack_tree *orig_parent = x->parent;
-
-    orig_parent->left = NULL;
-    x->right = orig_parent;
-    orig_parent->parent = x;
-    x->parent = orig_grandparent->parent;
-    orig_grandparent->parent = x;
-    x->left = orig_grandparent;
-    orig_grandparent->right = NULL;
-    orig_grandparent->color = Red;
-    x->color = Black;
-}
-
-void right_right_case(redblack_tree *x)
-{
-    if(x->parent == NULL || x->parent->parent == NULL){
-        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
-        return;
-    }
-    redblack_tree *orig_parent_left = x->parent->left;
-    redblack_tree *orig_grandparent = x->parent->parent;
-    x->parent->parent = orig_grandparent->parent;
-    x->parent->left = orig_grandparent;
-    orig_grandparent->parent = x;
-    orig_grandparent->right = orig_parent_left;
-    orig_grandparent->color = Red;
-    x->parent->color = Black;
-}
-
-
-void redblack_insert_adjustment(redblack_tree *l)
-{
-    if(l->parent == NULL || l->parent->color == Black){
-        return;
-    }else{
-        redblack_tree *uncle = NULL;
-        redblack_tree *grandparent = NULL;
-        if(l->parent->parent != NULL) grandparent = l->parent->parent;
-
-        if(grandparent->left == l->parent){
-            uncle = grandparent->right;
-        }else{
-            uncle = grandparent->left;
-        }
-        if(uncle != NULL){
-            if(uncle->color == Red){
-                l->parent->color = Black;
-                uncle->color = Black;
-                grandparent->color = Red;        
-                recolor_redblack_as_needed(grandparent);
-            }else{
-                if(grandparent == NULL){
-                    return;
-                } else if (grandparent->left == l->parent && l->parent->left == l){
-                    left_left_case(l);
-                } else if (grandparent->left == l->parent && l->parent->right == l){
-                    left_right_case(l);
-                } else if (grandparent->right == l->parent && l->parent->right == l){
-                    right_right_case(l);
-                } else if (grandparent->right == l->parent && l->parent->left == l){
-                    right_left_case(l);
-                }
-            }
-        }
+    x->parent->parent->color = Red;
+    if (x == x->parent->left && x->parent == x->parent->parent->left) {
+        rotate_right(x->parent->parent);
+    } else {
+        assert(x == x->parent->right && x->parent == x->parent->parent->right);
+        rotate_left(x->parent->parent);
     }
 }
 
@@ -209,7 +173,7 @@ void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
         p->parent = parent;
         p->color = Red;
         *l = p;
-        redblack_insert_adjustment(*l);
+        insert_case1(*l);
         return;
     }
 
