@@ -20,6 +20,15 @@
 #include <ctype.h>
 
 typedef enum { false, true } bool;
+typedef enum { Red, Black } redblack;
+
+typedef struct redblack_tree {
+    char *item;
+    struct redblack_tree *parent;
+    struct redblack_tree *left;
+    struct redblack_tree *right;
+    redblack color;
+} redblack_tree;
 
 typedef struct tree {
     char *item;
@@ -32,6 +41,100 @@ typedef struct list {
     char *item;
     struct list *next;
 } list;
+
+redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
+{
+    if (l == NULL) return(NULL);
+
+    int strcmp_result = strcmp(x, l->item);
+
+    if(strcmp_result == 0){
+        return(l);
+    }else if(strcmp_result < 0){
+        return(search_redblack_tree(l->left, x));
+    }else{
+        return(search_redblack_tree(l->right, x));
+    }
+}
+
+void recolor_redblack_as_needed(redblack_tree *x)
+{ 
+    redblack_tree *uncle = NULL;
+    if(x->parent == NULL){
+        x->color = Black;
+        return;
+    }
+    
+    if(x->parent->left == x){
+        uncle = x->parent->right;
+    }else{
+        uncle = x->parent->left;
+    }
+    if(uncle != NULL){
+        x->parent->color = Black;
+        uncle->color = Black;
+        if(x->parent->parent != NULL && x->parent->parent->parent != NULL){
+            x->parent->parent->color = Red;
+            recolor_redblack_as_needed(x->parent->parent);
+        }
+    }
+}
+
+void redblack_insert_adjustment(redblack_tree *l)
+{
+    if(l->parent == NULL || l->parent->color == Black){
+        return;
+    }else{
+        redblack_tree *uncle = NULL;
+        if(l->parent->left == l){
+            uncle = l->parent->right;
+        }else{
+            uncle = l->parent->left;
+        }
+        if(uncle != NULL){
+            if(uncle->color == Red){
+                recolor_redblack_as_needed(l);
+            }else{
+                // handle rotations..
+            }
+        }
+    }
+}
+
+void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
+{
+    redblack_tree *p;
+
+    if(*l == NULL){
+        p = malloc(sizeof(redblack_tree));
+        p->item = strdup(x);
+        p->left = NULL;
+        p->right = NULL;
+        p->parent = parent;
+        p->color = Red;
+        *l = p;
+        redblack_insert_adjustment(*l);
+        return;
+    }
+
+    int strcmp_result = strcmp(x, (*l)->item);
+    
+    if(strcmp_result < 0){
+        insert_redblack_tree(&((*l)->left), x, *l);
+    }else{
+        insert_redblack_tree(&((*l)->right), x, *l);
+    }
+}
+
+void traverse_redblack_tree_print(redblack_tree *l)
+{
+    if(l != NULL){
+        traverse_redblack_tree_print(l->left);
+        printf("%s\n", l->item);
+        traverse_redblack_tree_print(l->right);
+    }
+}
+
 
 tree *search_tree(tree *l, char *x)
 {
@@ -157,12 +260,44 @@ void parse_text_dictionary_bst(char *text)
             dictionary->item = strdup(word);
             dictionary->left = NULL;
             dictionary->right = NULL;    
+            dictionary->parent = NULL;
             first_time = false;
         }else{
             add_or_skip_string_bst(&dictionary, word);
         }
     }    
 }
+
+void add_or_skip_string_redblack_bst(redblack_tree **l, char *string)
+{
+    if(search_redblack_tree(*l, string) == NULL){
+        printf("%s\n", string);
+        insert_redblack_tree(l, string, NULL);
+        (*l)->color = Black;
+    }
+}
+
+void parse_text_dictionary_redblack_bst(char *text)
+{
+    redblack_tree *dictionary = malloc(sizeof(redblack_tree));
+    char *word;
+    bool first_time = true;
+
+    for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
+        if(first_time){
+            printf("%s\n", word);
+            dictionary->item = strdup(word);
+            dictionary->left = NULL;
+            dictionary->right = NULL;
+            dictionary->parent = NULL;
+            dictionary->color = Black;
+            first_time = false;
+        }else{
+            add_or_skip_string_redblack_bst(&dictionary, word);
+        }
+    }    
+}
+
 
 char *read_file(char *filename)
 {
@@ -212,7 +347,8 @@ int main(int argc, char *argv[])
 {
     char *file_text = read_file("genebuild.txt");
     //parse_text_dictionary_list(file_text);
-    parse_text_dictionary_bst(file_text);
+    //parse_text_dictionary_bst(file_text);
+    parse_text_dictionary_redblack_bst(file_text);
 
     return 0;
 }
