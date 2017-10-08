@@ -66,16 +66,19 @@ redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
 }
 
 void replace_node(redblack_tree *old, redblack_tree *new) {
-    if (old == old->parent->left){
-        old->parent->left = new;
-    } else {
-        old->parent->right = new;
+    if(old->parent == NULL){
+        // do what?
+    }else{
+        if (old == old->parent->left){
+            old->parent->left = new;
+        } else {
+            old->parent->right = new;
+        }
     }
     if (new != NULL) {
         new->parent = old->parent;
     }
 }
-
 
 void rotate_left(redblack_tree *x)
 {
@@ -186,24 +189,50 @@ void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
     }
 }
 
-int compute_black_height(redblack_tree* x) {
-    if (x == NULL)
-        return 0; 
-
-    int left_height = compute_black_height(x->left);
-    int right_height = compute_black_height(x->right);
-    int add = x->color == Black ? 1 : 0;
-
-    if (left_height == -1 || right_height == -1 || left_height != right_height)
-        return -1; 
-    else
-        return left_height + add;
+bool is_balanced_util(redblack_tree *root, int *maxh, int *minh)
+{
+    // Base case
+    if (root == NULL)
+    {
+        *maxh = 0;
+        *minh = 0;
+        return true;
+    }
+ 
+    int *lmxh, *lmnh; // To store max and min heights of left subtree
+    int *rmxh, *rmnh; // To store max and min heights of right subtree
+ 
+    // Check if left subtree is balanced, also set lmxh and lmnh
+    if (is_balanced_util(root->left, lmxh, lmnh) == false)
+        return false;
+ 
+    // Check if right subtree is balanced, also set rmxh and rmnh
+    if (is_balanced_util(root->right, rmxh, rmnh) == false)
+        return false;
+ 
+    // Set the max and min heights of this node for the parent call
+    *maxh = ((*lmxh > *rmxh) ? *lmxh : *rmxh) + 1;
+    *minh = ((*lmxh < *rmxh) ? *lmxh : *rmxh) + 1;
+ 
+    // See if this node is balanced
+    if (*maxh <= 2*(*minh))
+        return true;
+ 
+    return false;
 }
+ 
+bool is_balanced(redblack_tree *root)
+{
+    int *maxh;
+    int *minh;
+    return is_balanced_util(root, maxh, minh);
+}
+
 
 void traverse_redblack_tree_print(redblack_tree *l)
 {
     if(l != NULL){
-        //traverse_redblack_tree_print(l->left);
+        traverse_redblack_tree_print(l->left);
         printf("%s - color: %s\n", l->item, (l->color == Black ? "Black" : "Red"));
         traverse_redblack_tree_print(l->right);
     }
@@ -369,8 +398,8 @@ void parse_text_dictionary_redblack_bst(char *text)
             add_or_skip_string_redblack_bst(&dictionary, word);
         }
     }
-    printf("Black height of red-black tree: %d\n", compute_black_height(dictionary));
-    traverse_redblack_tree_print(dictionary);
+    printf("Tree is balanced: %s\n", (is_balanced(dictionary) ? "true" : "false"));
+    //traverse_redblack_tree_print(dictionary);
 }
 
 
