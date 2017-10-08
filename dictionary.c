@@ -87,6 +87,79 @@ void recolor_redblack_as_needed(redblack_tree *x)
     }
 }
 
+void left_left_case(redblack_tree *x)
+{
+    if(x->parent == NULL || x->parent->parent == NULL){
+        printf("ERROR: Trying to right rotate without parent/grandparent...\n");
+        return;
+    }
+    redblack_tree *orig_parent_right = x->parent->right;
+    redblack_tree *orig_grandparent = x->parent->parent;
+    x->parent->parent = orig_grandparent->parent;
+    x->parent->right = orig_grandparent;
+    orig_grandparent->parent = x;
+    orig_grandparent->left = orig_parent_right;
+    orig_grandparent->color = Red;
+    x->parent->color = Black;
+}
+
+void left_right_case(redblack_tree *x)
+{
+    if(x->parent == NULL || x->parent->parent == NULL){
+        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
+        return;
+    }
+    redblack_tree *orig_grandparent = x->parent->parent;
+    redblack_tree *orig_parent = x->parent;
+
+    orig_parent->right = NULL;
+    x->left = orig_parent;
+    orig_parent->parent = x;
+    x->parent = orig_grandparent->parent;
+    orig_grandparent->parent = x;
+    x->right = orig_grandparent;
+    orig_grandparent->left = NULL;
+    orig_grandparent->color = Red;
+    x->color = Black;
+}
+
+void right_left_case(redblack_tree *x)
+{
+    if(x->parent == NULL || x->parent->parent == NULL){
+        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
+        return;
+    }
+    redblack_tree *orig_grandparent = x->parent->parent;
+    redblack_tree *orig_parent = x->parent;
+
+    orig_parent->left = NULL;
+    x->right = orig_parent;
+    orig_parent->parent = x;
+    x->parent = orig_grandparent->parent;
+    orig_grandparent->parent = x;
+    x->left = orig_grandparent;
+    orig_grandparent->right = NULL;
+    orig_grandparent->color = Red;
+    x->color = Black;
+}
+
+void right_right_case(redblack_tree *x)
+{
+    if(x->parent == NULL || x->parent->parent == NULL){
+        printf("ERROR: Trying to left rotate without parent/grandparent...\n");
+        return;
+    }
+    redblack_tree *orig_parent_left = x->parent->left;
+    redblack_tree *orig_grandparent = x->parent->parent;
+    x->parent->parent = orig_grandparent->parent;
+    x->parent->left = orig_grandparent;
+    orig_grandparent->parent = x;
+    orig_grandparent->right = orig_parent_left;
+    orig_grandparent->color = Red;
+    x->parent->color = Black;
+}
+
+
 void redblack_insert_adjustment(redblack_tree *l)
 {
     if(l->parent == NULL || l->parent->color == Black){
@@ -111,13 +184,13 @@ void redblack_insert_adjustment(redblack_tree *l)
                 if(grandparent == NULL){
                     return;
                 } else if (grandparent->left == l->parent && l->parent->left == l){
-                    // left left case
+                    left_left_case(l);
                 } else if (grandparent->left == l->parent && l->parent->right == l){
-                    // left right case
+                    left_right_case(l);
                 } else if (grandparent->right == l->parent && l->parent->right == l){
-                    // right right case
+                    right_right_case(l);
                 } else if (grandparent->right == l->parent && l->parent->left == l){
-                    // right left case
+                    right_left_case(l);
                 }
             }
         }
@@ -149,15 +222,28 @@ void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
     }
 }
 
+int compute_black_height(redblack_tree* x) {
+    if (x == NULL)
+        return 0; 
+
+    int left_height = compute_black_height(x->left);
+    int right_height = compute_black_height(x->right);
+    int add = x->color == Black ? 1 : 0;
+
+    if (left_height == -1 || right_height == -1 || left_height != right_height)
+        return -1; 
+    else
+        return left_height + add;
+}
+
 void traverse_redblack_tree_print(redblack_tree *l)
 {
     if(l != NULL){
-        traverse_redblack_tree_print(l->left);
-        printf("%s\n", l->item);
+        //traverse_redblack_tree_print(l->left);
+        printf("%s - color: %s\n", l->item, (l->color == Black ? "Black" : "Red"));
         traverse_redblack_tree_print(l->right);
     }
 }
-
 
 tree *search_tree(tree *l, char *x)
 {
@@ -318,7 +404,9 @@ void parse_text_dictionary_redblack_bst(char *text)
         }else{
             add_or_skip_string_redblack_bst(&dictionary, word);
         }
-    }    
+    }
+    printf("Black height of red-black tree: %d\n", compute_black_height(dictionary));
+    traverse_redblack_tree_print(dictionary);
 }
 
 
