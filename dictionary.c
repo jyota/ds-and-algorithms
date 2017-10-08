@@ -108,7 +108,17 @@ void redblack_insert_adjustment(redblack_tree *l)
                 grandparent->color = Red;        
                 recolor_redblack_as_needed(grandparent);
             }else{
-                // handle rotations..
+                if(grandparent == NULL){
+                    return;
+                } else if (grandparent->left == l->parent && l->parent->left == l){
+                    // left left case
+                } else if (grandparent->left == l->parent && l->parent->right == l){
+                    // left right case
+                } else if (grandparent->right == l->parent && l->parent->right == l){
+                    // right right case
+                } else if (grandparent->right == l->parent && l->parent->left == l){
+                    // right left case
+                }
             }
         }
     }
