@@ -19,17 +19,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include "redblacktree.h" // using someone else's implementation
 
 typedef enum { false, true } bool;
-typedef enum { Red, Black } redblack;
-
-typedef struct redblack_tree {
-    char *item;
-    struct redblack_tree *parent;
-    struct redblack_tree *left;
-    struct redblack_tree *right;
-    redblack color;
-} redblack_tree;
 
 typedef struct tree {
     char *item;
@@ -42,76 +34,6 @@ typedef struct list {
     char *item;
     struct list *next;
 } list;
-
-
-redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
-{
-    if (l == NULL) return(NULL);
-
-    int strcmp_result = strcmp(x, l->item);
-
-    if(strcmp_result == 0){
-        return(l);
-    }else if(strcmp_result < 0){
-        return(search_redblack_tree(l->left, x));
-    }else{
-        return(search_redblack_tree(l->right, x));
-    }
-}
-
-void repair_tree(redblack_tree *x)
-{
-	// don't do anything yet, seem to have problems for now getting this right.
-}
-
-void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
-{
-    redblack_tree *p;
-
-    if(*l == NULL){
-        p = malloc(sizeof(redblack_tree));
-        p->item = strdup(x);
-        p->left = NULL;
-        p->right = NULL;
-        p->parent = parent;
-        p->color = Red;
-        *l = p;
-        repair_tree(*l);
-        return;
-    }
-
-    int strcmp_result = strcmp(x, (*l)->item);
-    
-    if(strcmp_result < 0){
-        insert_redblack_tree(&((*l)->left), x, *l);
-    }else{
-        insert_redblack_tree(&((*l)->right), x, *l);
-    }
-}
-
-int compute_black_height(redblack_tree *x)
-{
-    if (x == NULL)
-        return 0; 
-
-    int leftHeight = compute_black_height(x->left);
-    int rightHeight = compute_black_height(x->right);
-    int add = x->color == Black ? 1 : 0;
-
-    if (leftHeight == -1 || rightHeight == -1 || leftHeight != rightHeight)
-        return -1; 
-    else
-        return leftHeight + add;
-}
-
-void traverse_redblack_tree_print(redblack_tree *l)
-{
-    if(l != NULL){
-        traverse_redblack_tree_print(l->left);
-        printf("%s - color: %s\n", l->item, (l->color == Black ? "Black" : "Red"));
-        traverse_redblack_tree_print(l->right);
-    }
-}
 
 tree *search_tree(tree *l, char *x)
 {
@@ -245,33 +167,23 @@ void parse_text_dictionary_bst(char *text)
     }    
 }
 
-void add_or_skip_string_redblack_bst(redblack_tree **l, char *string)
+void add_or_skip_string_redblack_bst(struct redblack_tree *l, char *string)
 {
-    if(search_redblack_tree(*l, string) == NULL){
+    struct rb_node *result = tree_find(l, string);
+    if(result->key == NULL){
         printf("%s\n", string);
-        insert_redblack_tree(l, string, NULL);
-        (*l)->color = Black;
+        tree_insert(l, string);        
     }
 }
 
 void parse_text_dictionary_redblack_bst(char *text)
 {
-    redblack_tree *dictionary = malloc(sizeof(redblack_tree));
+    struct redblack_tree *dictionary;
     char *word;
-    bool first_time = true;
+    init_tree(&dictionary);
 
     for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
-        if(first_time){
-            printf("%s\n", word);
-            dictionary->item = strdup(word);
-            dictionary->left = NULL;
-            dictionary->right = NULL;
-            dictionary->parent = NULL;
-            dictionary->color = Black;
-            first_time = false;
-        }else{
-            add_or_skip_string_redblack_bst(&dictionary, word);
-        }
+        add_or_skip_string_redblack_bst(dictionary, word);
     }
     //traverse_redblack_tree_print(dictionary);    
     //printf("Black height: %d\n", compute_black_height(dictionary));
