@@ -43,12 +43,6 @@ typedef struct list {
     struct list *next;
 } list;
 
-void insert_case1(redblack_tree *x);
-void insert_case2(redblack_tree *x);
-void insert_case3(redblack_tree *x);
-void insert_case4(redblack_tree *x);
-void insert_case5(redblack_tree *x);
-
 
 redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
 {
@@ -65,102 +59,138 @@ redblack_tree *search_redblack_tree(redblack_tree *l, char *x)
     }
 }
 
-void replace_node(redblack_tree *old, redblack_tree *new) {
-    if(old->parent == NULL){
-        // do what?
-    }else{
-        if (old == old->parent->left){
-            old->parent->left = new;
-        } else {
-            old->parent->right = new;
-        }
-    }
-    if (new != NULL) {
-        new->parent = old->parent;
-    }
-}
-
-void rotate_left(redblack_tree *x)
+void rotateLeft(redblack_tree *x)
 {
     redblack_tree *right = x->right;
-    replace_node(x, right);
+ 
     x->right = right->left;
-    if (right->left != NULL) {
-        right->left->parent = x;
+ 
+    if (x->right != NULL)
+        x->right->parent = x;
+ 
+    right->parent = x->parent;
+ 
+    if (x->parent == NULL){
+        // do nothing 
+    } else if (x == x->parent->left){
+        x->parent->left = right;
+    } else {
+        x->parent->right = right;
     }
+ 
     right->left = x;
     x->parent = right;
 }
-
-void rotate_right(redblack_tree *x)
+ 
+void rotateRight(redblack_tree *x)
 {
     redblack_tree *left = x->left;
-    replace_node(x, left);
+ 
     x->left = left->right;
-    if (left->right != NULL) {
-        left->right->parent = x;
+ 
+    if (x->left != NULL){
+        x->left->parent = x;
     }
+ 
+    left->parent = x->parent;
+ 
+    if (x->parent == NULL){
+        // nothing
+    } else if (x == x->parent->left){
+        x->parent->left = left;
+    } else {
+        x->parent->right = left;
+    }
+ 
     left->right = x;
     x->parent = left;
 }
 
-void insert_case1(redblack_tree *x)
+void repair_tree(redblack_tree *x)
 {
-    if (x->parent == NULL){
-        x->color = Black;
-    } else {
-        insert_case2(x);
-    }
-}
-
-void insert_case2(redblack_tree *x)
-{
-    if (x->parent->color == Black){
-        return;
-    } else {
-        insert_case3(x);
-    }
-}
-
-void insert_case3(redblack_tree *x)
-{
-    redblack_tree *uncle = NULL;
-    if(x->parent == x->parent->parent->left){
-        uncle = x->parent->parent->right;
-    }else{
-        uncle = x->parent->parent->left;
-    }
-    if (uncle->color == Red) {
-        x->parent->color = Black;
-        uncle->color = Black;
-        x->parent->parent->color = Red;
-        insert_case1(x->parent->parent);
-    } else {
-        insert_case4(x);
-    }
-}
-
-void insert_case4(redblack_tree *x)
-{
-    if (x == x->parent->right && x->parent == x->parent->parent->left) {
-        rotate_left(x->parent);
-        x = x->left;
-    } else if (x == x->parent->left && x->parent == x->parent->parent->right) {
-        rotate_right(x->parent);
-        x = x->right;
-    }
-    insert_case5(x);
-}
-
-void insert_case5(redblack_tree *x)
-{
-    x->parent->color = Black;
-    x->parent->parent->color = Red;
-    if (x == x->parent->left && x->parent == x->parent->parent->left) {
-        rotate_right(x->parent->parent);
-    } else {
-        assert(x == x->parent->right && x->parent == x->parent->parent->right);
-        rotate_left(x->parent->parent);
+    redblack_tree *parent = NULL;
+    redblack_tree *grandparent = NULL;
+ 
+    while ((x != NULL) && (x->color == Red) && (x->parent->color == Red))
+    { 
+        parent = x->parent;
+        grandparent = x->parent->parent;
+ 
+        /*  Case : A
+            Parent of x is left child of Grand-parent of x */
+        if (parent == grandparent->left)
+        {
+            redblack_tree *uncle = grandparent->right;
+ 
+            /* Case : 1
+               The uncle of x is also red
+               Only Recoloring required */
+            if (uncle != NULL && uncle->color == Red)
+            {
+                grandparent->color = Red;
+                parent->color = Black;
+                uncle->color = Black;
+                x = grandparent;
+            } else {
+                /* Case : 2
+                   x is right child of its parent
+                   Left-rotation required */
+                if (x == parent->right)
+                {
+                    rotateLeft(parent);
+                    x = parent;
+                    parent = x->parent;
+                }
+ 
+                /* Case : 3
+                   pt is left child of its parent
+                   Right-rotation required */
+                rotateRight(grandparent);
+                redblack tmp_color = parent->color;
+                parent->color = grandparent->color;
+                grandparent->color = tmp_color;
+                x = parent;
+            }
+        }
+ 
+        /* Case : B
+           Parent of pt is right child of Grand-parent of pt */
+        else
+        {
+            redblack_tree *uncle = grandparent->left;
+ 
+            /*  Case : 1
+                The uncle of pt is also red
+                Only Recoloring required */
+            if ((uncle != NULL) && (uncle->color == Red))
+            {
+                grandparent->color = Red;
+                parent->color = Black;
+                uncle->color = Black;
+                x = grandparent;
+            }
+            else
+            {
+                /* Case : 2
+                   pt is left child of its parent
+                   Right-rotation required */
+                if (x == parent->left)
+                {
+                    rotateRight(parent);
+                    x = parent;
+                    parent = x->parent;
+                }
+ 
+                /* Case : 3
+                   pt is right child of its parent
+                   Left-rotation required */
+                rotateLeft(grandparent);
+                redblack tmp_color = parent->color;
+                parent->color = grandparent->color;
+                grandparent->color = tmp_color;
+                x = parent;
+            }
+        }
     }
 }
 
@@ -176,7 +206,7 @@ void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
         p->parent = parent;
         p->color = Red;
         *l = p;
-        insert_case1(*l);
+        repair_tree(*l);
         return;
     }
 
@@ -189,45 +219,20 @@ void insert_redblack_tree(redblack_tree **l, char *x, redblack_tree *parent)
     }
 }
 
-bool is_balanced_util(redblack_tree *root, int *maxh, int *minh)
+int compute_black_height(redblack_tree *x)
 {
-    // Base case
-    if (root == NULL)
-    {
-        *maxh = 0;
-        *minh = 0;
-        return true;
-    }
- 
-    int *lmxh, *lmnh; // To store max and min heights of left subtree
-    int *rmxh, *rmnh; // To store max and min heights of right subtree
- 
-    // Check if left subtree is balanced, also set lmxh and lmnh
-    if (is_balanced_util(root->left, lmxh, lmnh) == false)
-        return false;
- 
-    // Check if right subtree is balanced, also set rmxh and rmnh
-    if (is_balanced_util(root->right, rmxh, rmnh) == false)
-        return false;
- 
-    // Set the max and min heights of this node for the parent call
-    *maxh = ((*lmxh > *rmxh) ? *lmxh : *rmxh) + 1;
-    *minh = ((*lmxh < *rmxh) ? *lmxh : *rmxh) + 1;
- 
-    // See if this node is balanced
-    if (*maxh <= 2*(*minh))
-        return true;
- 
-    return false;
-}
- 
-bool is_balanced(redblack_tree *root)
-{
-    int *maxh;
-    int *minh;
-    return is_balanced_util(root, maxh, minh);
-}
+    if (x == NULL)
+        return 0; 
 
+    int leftHeight = compute_black_height(x->left);
+    int rightHeight = compute_black_height(x->right);
+    int add = x->color == Black ? 1 : 0;
+
+    if (leftHeight == -1 || rightHeight == -1 || leftHeight != rightHeight)
+        return -1; 
+    else
+        return leftHeight + add;
+}
 
 void traverse_redblack_tree_print(redblack_tree *l)
 {
@@ -398,8 +403,8 @@ void parse_text_dictionary_redblack_bst(char *text)
             add_or_skip_string_redblack_bst(&dictionary, word);
         }
     }
-    printf("Tree is balanced: %s\n", (is_balanced(dictionary) ? "true" : "false"));
-    //traverse_redblack_tree_print(dictionary);
+    traverse_redblack_tree_print(dictionary);    
+    printf("Black height: %d\n", compute_black_height(dictionary));
 }
 
 
