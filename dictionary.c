@@ -20,7 +20,6 @@
 #include <ctype.h>
 #include <assert.h>
 #include <time.h>
-#include "redblacktree.h" // using someone else's implementation
 
 typedef enum { false, true } bool;
 
@@ -30,6 +29,14 @@ typedef struct tree {
     struct tree *left;
     struct tree *right;
 } tree;
+
+typedef struct redblack_tree {
+    char *item;
+    struct redblack_tree *parent;
+    struct redblack_tree *left;
+    struct redblack_tree *right;
+    bool red;
+} redblack_tree;
 
 typedef struct list {
     char *item;
@@ -47,6 +54,22 @@ tree *rotate_right(tree *head)
 tree *rotate_left(tree *head)
 { 
     tree *x = head->right; 
+    head->right = x->left; 
+    x->left = head;
+    return x; 
+}
+
+redblack_tree *rb_rotate_right(redblack_tree *head)
+{ 
+    redblack_tree *x = head->left; 
+    head->left = x->right; 
+    x->right = head;
+    return x; 
+}
+
+redblack_tree *rb_rotate_left(redblack_tree *head)
+{ 
+    redblack_tree *x = head->right; 
     head->right = x->left; 
     x->left = head;
     return x; 
@@ -101,6 +124,66 @@ tree *splay(tree *head, char *item)
 void insert_splay_tree(tree **head, char *item)
 { 
     *head = splay(*head, item); 
+}
+
+redblack_tree *rb_search_tree(redblack_tree *l, char *x)
+{
+    if (l == NULL) return(NULL);
+
+    int strcmp_result = strcmp(x, l->item);
+
+    if(strcmp_result == 0){
+        return(l);
+    }else if(strcmp_result < 0){
+        return(rb_search_tree(l->left, x));
+    }else{
+        return(rb_search_tree(l->right, x));
+    }
+}
+
+redblack_tree *redblack_insert(redblack_tree *head, char *item, bool change)
+{
+    if(head == NULL){
+        redblack_tree *new = malloc(sizeof(redblack_tree));
+        new->left = NULL;
+        new->right = NULL;
+        new->item = strdup(item);
+        new->red = true;
+        return new;
+    }
+    if((head->left != NULL) && (head->left->red) && (head->right != NULL) && (head->right->red)){
+        head->red = true;
+        head->left->red = false;
+        head->right->red = false;
+    }
+    if(strcmp(item, head->item) < 0){
+        head->left = redblack_insert(head->left, item, false);
+        if(head->red && (head->left != NULL) && head->left->red && change){
+            head = rb_rotate_right(head);
+        }
+        if((head->left != NULL) && head->left->red && (head->left->left != NULL) && head->left->left->red){
+            head = rb_rotate_right(head);
+            head->red = false;
+            head->right->red = true;
+        }
+    }else{
+        head->right = redblack_insert(head->right, item, true);
+        if(head->red && (head->right != NULL) && head->right->red && !change){
+            head = rb_rotate_left(head);
+        }
+        if((head->right != NULL) && head->right->red && (head->right->right != NULL) && head->right->right->red){
+            head = rb_rotate_left(head);
+            head->red = false;
+            head->left->red = true;
+        }
+    }
+    return head;    
+}
+
+void rb_insert(redblack_tree **head, char *item)
+{
+    *head = redblack_insert(*head, item, false);
+    (*head)->red = false;
 }
 
 tree *search_tree(tree *l, char *x)
@@ -264,27 +347,36 @@ void parse_text_dictionary_splay_bst(char *text)
     //traverse_tree_print(dictionary);
 }
 
-void add_or_skip_string_redblack_bst(struct redblack_tree *l, char *string)
+void add_or_skip_string_rb_bst(redblack_tree **l, char *string)
 {
-    struct rb_node *result = tree_find(l, string);
-    if(result->key == NULL){
+    if(rb_search_tree(*l, string) == NULL){
         //printf("%s\n", string);
-        tree_insert(l, string);        
+        rb_insert(l, string);
     }
 }
 
-void parse_text_dictionary_redblack_bst(char *text)
+void parse_text_dictionary_rb_bst(char *text)
 {
-    struct redblack_tree *dictionary;
+    redblack_tree *dictionary = malloc(sizeof(redblack_tree));
     char *word;
-    init_tree(&dictionary);
+    bool first_time = true;
 
     for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
-        add_or_skip_string_redblack_bst(dictionary, word);
-    }
-    //traverse_redblack_tree_print(dictionary);    
-    //printf("Black height: %d\n", compute_black_height(dictionary));
+        if(first_time){
+            //printf("%s\n", word);
+            dictionary->item = strdup(word);
+            dictionary->left = NULL;
+            dictionary->right = NULL;    
+            dictionary->parent = NULL;
+            dictionary->red = false;
+            first_time = false;
+        }else{
+            add_or_skip_string_rb_bst(&dictionary, word);
+        }
+    }    
+    //traverse_tree_print(dictionary);
 }
+
 
 char *read_file(char *filename)
 {
@@ -359,7 +451,7 @@ int main(int argc, char *argv[])
 
     file_text = read_file("poe-narrative-695.txt"); 
     start = clock();
-    parse_text_dictionary_redblack_bst(file_text);
+    parse_text_dictionary_rb_bst(file_text);
     end = clock();
     redblack_bst_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 
