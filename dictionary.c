@@ -19,6 +19,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <time.h>
 #include "redblacktree.h" // using someone else's implementation
 
 typedef enum { false, true } bool;
@@ -34,6 +35,73 @@ typedef struct list {
     char *item;
     struct list *next;
 } list;
+
+tree *rotate_right(tree *head)
+{ 
+    tree *x = head->left; 
+    head->left = x->right; 
+    x->right = head;
+    return x; 
+}
+
+tree *rotate_left(tree *head)
+{ 
+    tree *x = head->right; 
+    head->right = x->left; 
+    x->left = head;
+    return x; 
+}
+
+tree *splay(tree *head, char *item)
+{ 
+    if (head == NULL){
+        tree *new = malloc(sizeof(tree));
+        new->left = NULL;
+        new->right = NULL;
+        new->item = strdup(item);
+        return new;
+    };
+
+    if (strcmp(item, head->item) < 0){
+        if (head->left == NULL){
+            tree *new = malloc(sizeof(tree));
+            new->left = NULL;
+            new->right = head;
+            new->item = strdup(item);
+            return new;                
+        }
+        if (strcmp(item, head->left->item) < 0)
+        { 
+            head->left->left = splay(head->left->left, item); 
+            head = rotate_right(head); 
+        } else { 
+            head->left->right = splay(head->left->right, item); 
+            head->left = rotate_left(head->left); 
+        }
+        return rotate_right(head);
+    } else {
+        if (head->right == NULL){
+            tree *new = malloc(sizeof(tree));
+            new->left = head;
+            new->right = NULL;
+            new->item = strdup(item);
+            return new;                            
+        }
+        if (strcmp(head->right->item, item) < 0){ 
+            head->right->right = splay(head->right->right, item); 
+            head = rotate_left(head); 
+        } else { 
+            head->right->left = splay(head->right->left, item); 
+            head->right = rotate_right(head->right); 
+        }
+        return rotate_left(head);
+    }
+}
+
+void insert_splay_tree(tree **head, char *item)
+{ 
+    *head = splay(*head, item); 
+}
 
 tree *search_tree(tree *l, char *x)
 {
@@ -116,7 +184,7 @@ list *search_list(list *l, char *string)
 void add_or_skip_string_list(list **l, char *string)
 {
     if(search_list(*l, string) == NULL){
-        printf("%s\n", string);
+        //printf("%s\n", string);
         insert_list(l, string);
     }
 }
@@ -129,7 +197,7 @@ void parse_text_dictionary_list(char *text)
 
     for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
         if(first_time){
-            printf("%s\n", word);
+            //printf("%s\n", word);
             dictionary->item = strdup(word);
             dictionary->next = NULL;    
             first_time = false;
@@ -142,7 +210,7 @@ void parse_text_dictionary_list(char *text)
 void add_or_skip_string_bst(tree **l, char *string)
 {
     if(search_tree(*l, string) == NULL){
-        printf("%s\n", string);
+        //printf("%s\n", string);
         insert_tree(l, string, NULL);
     }
 }
@@ -155,7 +223,7 @@ void parse_text_dictionary_bst(char *text)
 
     for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
         if(first_time){
-            printf("%s\n", word);
+            //printf("%s\n", word);
             dictionary->item = strdup(word);
             dictionary->left = NULL;
             dictionary->right = NULL;    
@@ -167,11 +235,40 @@ void parse_text_dictionary_bst(char *text)
     }    
 }
 
+void add_or_skip_string_splay_bst(tree **l, char *string)
+{
+    if(search_tree(*l, string) == NULL){
+        //printf("%s\n", string);
+        insert_splay_tree(l, string);
+    }
+}
+
+void parse_text_dictionary_splay_bst(char *text)
+{
+    tree *dictionary = malloc(sizeof(tree));
+    char *word;
+    bool first_time = true;
+
+    for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
+        if(first_time){
+            //printf("%s\n", word);
+            dictionary->item = strdup(word);
+            dictionary->left = NULL;
+            dictionary->right = NULL;    
+            dictionary->parent = NULL;
+            first_time = false;
+        }else{
+            add_or_skip_string_splay_bst(&dictionary, word);
+        }
+    }    
+    //traverse_tree_print(dictionary);
+}
+
 void add_or_skip_string_redblack_bst(struct redblack_tree *l, char *string)
 {
     struct rb_node *result = tree_find(l, string);
     if(result->key == NULL){
-        printf("%s\n", string);
+        //printf("%s\n", string);
         tree_insert(l, string);        
     }
 }
@@ -188,7 +285,6 @@ void parse_text_dictionary_redblack_bst(char *text)
     //traverse_redblack_tree_print(dictionary);    
     //printf("Black height: %d\n", compute_black_height(dictionary));
 }
-
 
 char *read_file(char *filename)
 {
@@ -235,11 +331,40 @@ char *read_file(char *filename)
 }
 
 int main(int argc, char *argv[])
-{
-    char *file_text = read_file("genebuild.txt");
-    //parse_text_dictionary_list(file_text);
-    //parse_text_dictionary_bst(file_text);
+{   
+    clock_t start, end;
+    double list_time_used;
+    double bst_time_used;
+    double splay_bst_time_used;
+    double redblack_bst_time_used;
+    double hash_time_used;
+    
+    char *file_text = read_file("poe-narrative-695.txt"); 
+    start = clock();
+    parse_text_dictionary_list(file_text);
+    end = clock();
+    list_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    file_text = read_file("poe-narrative-695.txt"); 
+    start = clock();
+    parse_text_dictionary_bst(file_text);
+    end = clock();
+    bst_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    file_text = read_file("poe-narrative-695.txt"); 
+    start = clock();
+    parse_text_dictionary_splay_bst(file_text);
+    end = clock();
+    splay_bst_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    file_text = read_file("poe-narrative-695.txt"); 
+    start = clock();
     parse_text_dictionary_redblack_bst(file_text);
+    end = clock();
+    redblack_bst_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Dictionary performance\nLinked-list time: %f\nBST time: %f\nSplay BST time: %f\nRed-black BST time: %f\n",
+           list_time_used, bst_time_used, splay_bst_time_used, redblack_bst_time_used);
 
     return 0;
 }
