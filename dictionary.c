@@ -470,6 +470,56 @@ char *read_file(char *filename)
     return returnable;
 }
 
+// Exercise 3.21 from Skiena's Algorithm Design Manual
+bool compare_bsts(tree *a, tree *b)
+{
+    if(a == NULL && b == NULL){ 
+        return true;
+    }else if(a != NULL && b != NULL){
+        bool string_compare = strcmp(a->item, b->item) == 0;
+        return string_compare && compare_bsts(a->left, b->left) && compare_bsts(a->right, b->right);
+    }else{
+        return false;
+    }
+}
+
+void check_bst_comparison()
+{
+    tree *a = malloc(sizeof(tree));
+    a->left = NULL;
+    a->right = NULL;
+    a->item = "I'm A";
+
+    tree *b = malloc(sizeof(tree));
+    b->left = NULL;
+    b->right = NULL;
+    b->item = "I'm A";
+
+    tree *c = malloc(sizeof(tree));
+    c->left = NULL;
+    c->right = NULL;
+    c->item = "I'm A";
+
+    insert_splay_tree(&a, "Mostly amazing");
+    insert_splay_tree(&b, "Mostly amazing");
+    insert_splay_tree(&c, "Mostly amazing");
+
+    insert_splay_tree(&a, "Mostly amazing!");
+    insert_splay_tree(&b, "Mostly amazing!");
+    insert_splay_tree(&c, "Mostly amazing!");
+
+    insert_splay_tree(&a, "Mostly amazing?");
+    insert_splay_tree(&b, "Mostly amazing?");
+    insert_splay_tree(&c, "Mostly amazing/");
+
+    printf("Expected: a == b, a != c\n");
+    bool a_eq_b = compare_bsts(a, b);
+    bool a_eq_c = compare_bsts(a, c);
+    printf("Actual: %s, %s\n", 
+           (a_eq_b ? "a == b" : "a != b"),
+           (a_eq_c ? "a == c" : "a != c"));
+}
+
 int main(int argc, char *argv[])
 {   
     clock_t start, end;
@@ -512,5 +562,6 @@ int main(int argc, char *argv[])
     printf("Dictionary performance\nLinked-list time: %f\nBST time: %f\nSplay BST time: %f\nRed-black BST time: %f\nHash (linear-probing) time: %f\n",
            list_time_used, bst_time_used, splay_bst_time_used, redblack_bst_time_used, hash_time_used);
 
+    check_bst_comparison();
     return 0;
 }
