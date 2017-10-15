@@ -43,6 +43,38 @@ typedef struct list {
     struct list *next;
 } list;
 
+char *hash_map[65536];
+
+int hash(char *string, int bins)
+{
+    int hash = 0;
+    int a = 127;
+    for(; *string != '\0'; string++){
+        hash = (a * hash + *string) % bins;
+    }
+    return hash;
+}
+
+int hash_search_or_insert(char *string)
+{
+    int this_string_hash = hash(string, 65536);
+    int i = 0;
+    for(i = this_string_hash; i < 65536; ++i){
+        if(hash_map[i] == NULL){
+            //printf("%s\n", string); 
+            hash_map[i] = strdup(string);
+            return i;
+        }else{
+            if(strcmp(string, hash_map[i]) == 0){
+                return i;
+            }else{
+                i = (i + 1) % 65536;
+            }
+        }
+    }
+    return -1;
+}
+
 tree *rotate_right(tree *head)
 { 
     tree *x = head->left; 
@@ -377,6 +409,22 @@ void parse_text_dictionary_rb_bst(char *text)
     //traverse_tree_print(dictionary);
 }
 
+void add_or_skip_string_hash(char *string)
+{
+    hash_search_or_insert(string);
+}
+
+void parse_text_dictionary_hash(char *text)
+{
+    int i;
+    char *word;
+    for(i = 0; i < 65536; ++i){
+        hash_map[i] = NULL;
+    }
+    for(word = strtok(text, " "); word; word = strtok(NULL, " ")){
+        add_or_skip_string_hash(word);
+    }    
+}
 
 char *read_file(char *filename)
 {
@@ -455,8 +503,14 @@ int main(int argc, char *argv[])
     end = clock();
     redblack_bst_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    printf("Dictionary performance\nLinked-list time: %f\nBST time: %f\nSplay BST time: %f\nRed-black BST time: %f\n",
-           list_time_used, bst_time_used, splay_bst_time_used, redblack_bst_time_used);
+    file_text = read_file("poe-narrative-695.txt"); 
+    start = clock();
+    parse_text_dictionary_hash(file_text);
+    end = clock();
+    hash_time_used = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Dictionary performance\nLinked-list time: %f\nBST time: %f\nSplay BST time: %f\nRed-black BST time: %f\nHash (linear-probing) time: %f\n",
+           list_time_used, bst_time_used, splay_bst_time_used, redblack_bst_time_used, hash_time_used);
 
     return 0;
 }
