@@ -1,7 +1,8 @@
 /* Exercise 3-37 from Skiena's Algorithms Design Manual
    --------
    Implement versions of several different sorting algorithms,
-   such as selection sort, insertion sort, mergesort, and quicksort.
+   such as selection sort, insertion sort, heapsort, mergesort, 
+   and quicksort.
    Conduct experiments to assess performance of these algorithms in
    a simple app that reads a large text file and reports exactly
    one instance of each word that appears within it. */
@@ -21,6 +22,22 @@ void print_unique(char *words[], int N)
         cmp_result = strcmp(words[i - 1], words[i]);
         if(cmp_result != 0){
             printf("%s\n", words[i]);
+        }
+    }
+}
+
+void insertion_sort(char *words[], int N)
+{
+    int i;
+    int j;
+
+    for(i = 1; i < N; ++i){
+        j = i;
+        while((j > 0) && (strcmp(words[j], words[j-1]) < 0)){
+            char *string_to_move = words[j];
+            words[j] = words[j-1];
+            words[j-1] = string_to_move;
+            --j;
         }
     }
 }
@@ -90,6 +107,8 @@ char *read_file(char *filename)
 int main(int argc, char *argv[])
 {   
     clock_t start, end;
+    double selection_sort_time;
+    double insertion_sort_time;
     char *word;
     char *file_text = read_file("poe-narrative-695.txt"); 
     char *words[100000];
@@ -100,11 +119,26 @@ int main(int argc, char *argv[])
         words[N] = strdup(word);
         ++N;
     }
+
+    // Setup a copy to keep the original array unsorted.
     for(i = 0; i < N; ++i){
         working_words[i] = strdup(words[i]);
     }
+    start = clock();
     selection_sort(working_words, N);
-    print_unique(working_words, N);
+    end = clock();
+    selection_sort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    for(i = 0; i < N; ++i){
+        working_words[i] = strdup(words[i]);
+    }
+    start = clock();
+    insertion_sort(working_words, N);
+    end = clock();
+    insertion_sort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Selection sort time: %f\nInsertion sort time: %f\n",
+           selection_sort_time, insertion_sort_time);
 
     return 0;
 }
