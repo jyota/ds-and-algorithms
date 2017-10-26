@@ -14,6 +14,120 @@
 #include <assert.h>
 #include <time.h>
 
+typedef struct {
+    char *q[100000];
+    int n;
+} priority_queue;
+
+int pq_parent(int n)
+{
+    if(n == 1){ 
+        return -1;
+    }else{
+        return (int) n / 2;
+    } 
+}
+
+int pq_young_child(int n)
+{
+    return 2 * n;
+}
+
+void pq_swap(priority_queue *q, int i, int j)
+{
+	char *temp;
+
+	temp = q->q[i];
+	q->q[i] = strdup(q->q[j]);
+	q->q[j] = strdup(temp);
+}
+
+void bubble_up(priority_queue *q, int p)
+{
+    if(pq_parent(p) == -1) return;
+    if(strcmp(q->q[pq_parent(p)], q->q[p]) > 0){
+        pq_swap(q, p, pq_parent(p));
+        bubble_up(q, pq_parent(p));
+    }
+}
+
+void pq_insert(priority_queue *q, char *x)
+{
+    if(q->n >= 100000){
+        printf("Warning: priority queue overflow insert x=%s\n", x);
+    }else{
+        q->n = (q->n) + 1;
+        q->q[q->n] = strdup(x);
+        bubble_up(q, q->n);
+    }
+}
+
+void pq_init(priority_queue *q)
+{
+    q->n = 0;
+}
+
+void make_heap(priority_queue *q, char *s[], int n)
+{
+    int i;
+
+    pq_init(q);
+    for(i = 0; i < n; ++i){
+        pq_insert(q, s[i]);
+    }
+}
+
+void bubble_down(priority_queue *q, int p)
+{
+    int child;
+    int i;
+    int min_index;
+
+    child = pq_young_child(p);
+    min_index = p;
+
+    for(i = 0; i <= 1; ++i){
+        if((child + i) <= q->n){
+            if(strcmp(q->q[min_index], q->q[child + i]) > 0){
+                min_index = child + i;
+            }
+        }
+    }
+
+    if(min_index != p){
+        pq_swap(q, p, min_index);
+        bubble_down(q, min_index);
+    }
+}
+
+char *extract_min(priority_queue *q)
+{
+    char *min;
+
+    if(q->n <= 0){
+        printf("Warning: empty priority queue.\n");
+    }else{
+        min = q->q[1];
+
+        q->q[1] = q->q[q->n];
+        q->n = q->n - 1;
+        bubble_down(q, 1);
+    }
+    return min;
+}
+
+void my_heapsort(char *s[], int n)
+{
+    int i;
+    priority_queue q;
+
+    make_heap(&q, s, n);
+
+    for(i = 0; i < n; ++i){
+        s[i] = extract_min(&q);
+    }
+}
+
 void print_unique(char *words[], int N)
 {
     int i;
@@ -109,6 +223,7 @@ int main(int argc, char *argv[])
     clock_t start, end;
     double selection_sort_time;
     double insertion_sort_time;
+    double heapsort_time;
     char *word;
     char *file_text = read_file("poe-narrative-695.txt"); 
     char *words[100000];
@@ -137,8 +252,16 @@ int main(int argc, char *argv[])
     end = clock();
     insertion_sort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    printf("Selection sort time: %f\nInsertion sort time: %f\n",
-           selection_sort_time, insertion_sort_time);
+    for(i = 0; i < N; ++i){
+        working_words[i] = strdup(words[i]);
+    }
+    start = clock();
+    my_heapsort(working_words, N);
+    end = clock();
+    heapsort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\n",
+           selection_sort_time, insertion_sort_time, heapsort_time);
 
     return 0;
 }
