@@ -19,6 +19,8 @@ typedef struct {
     int n;
 } priority_queue;
 
+char *mergesort_work[100000];
+
 int pq_parent(int n)
 {
     if(n == 1){ 
@@ -114,6 +116,36 @@ char *extract_min(priority_queue *q)
         bubble_down(q, 1);
     }
     return min;
+}
+
+void merge(char *s[], int l, int m, int r)
+{
+    int i, j, k;
+
+    for(i = m + 1; i > l; --i){
+        mergesort_work[i - 1] = s[i - 1];
+    }
+    for(j = m; j < r; ++j){
+        mergesort_work[r + m - j] = s[j + 1];
+    }
+    for(k = l; k <= r; ++k){
+        if(strcmp(mergesort_work[j], mergesort_work[i]) < 0){
+            s[k] = strdup(mergesort_work[j--]);
+        }else{
+            s[k] = strdup(mergesort_work[i++]);
+        }
+    }
+}
+
+void my_mergesort(char *s[], int l, int r)
+{
+    int m = (r + l) / 2;
+
+    if(r <= l) return;
+
+    my_mergesort(s, l, m);
+    my_mergesort(s, m + 1, r);
+    merge(s, l, m, r);
 }
 
 int partition(char *s[], int l, int r)
@@ -263,6 +295,7 @@ int main(int argc, char *argv[])
     double insertion_sort_time;
     double heapsort_time;
     double quicksort_time;
+    double mergesort_time;
 
     char *word;
     char *file_text = read_file("poe-narrative-695.txt"); 
@@ -277,7 +310,6 @@ int main(int argc, char *argv[])
     }
 
     // Setup a copy to keep the original array unsorted.
-    
     for(i = 0; i < N; ++i){
         working_words[i] = strdup(words[i]);
     }
@@ -310,8 +342,16 @@ int main(int argc, char *argv[])
     end = clock();
     quicksort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\nQuicksort time: %f\n",
-           selection_sort_time, insertion_sort_time, heapsort_time, quicksort_time);
+    for(i = 0; i < N; ++i){
+        working_words[i] = strdup(words[i]);
+    }
+    start = clock();
+    my_mergesort(working_words, 0, N - 1);
+    end = clock();
+    mergesort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
+    print_unique(working_words, N);
+    printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\nQuicksort time: %f\nMergesort time: %f\n",
+           selection_sort_time, insertion_sort_time, heapsort_time, quicksort_time, mergesort_time);
 
     return 0;
 }
