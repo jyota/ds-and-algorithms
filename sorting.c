@@ -116,6 +116,44 @@ char *extract_min(priority_queue *q)
     return min;
 }
 
+int partition(char *s[], int l, int r)
+{
+    int i = l -1;
+    int j = r;
+    char *v = strdup(s[r]);
+
+    for(;;){
+        while(strcmp(s[++i], v) < 0){
+            // do nothing but increment i
+        }
+        while(strcmp(v, s[--j]) < 0){
+            // do nothing but decrement j
+            if(j == l){
+                break;
+            }
+        }
+        if(i >= j){
+            break;
+        }
+        char *temp = strdup(s[i]);
+        s[i] = strdup(s[j]);
+        s[j] = temp;
+    }
+    char *final_temp = strdup(s[i]);
+    s[i] = strdup(s[r]);
+    s[r] = final_temp;
+    return i;
+}
+
+void quicksort(char *s[], int l, int r)
+{
+    int i;
+    if(r <= l) return;
+    i = partition(s, l, r);
+    quicksort(s, l, i - 1);
+    quicksort(s, i + 1, r);
+}
+
 void my_heapsort(char *s[], int n)
 {
     int i;
@@ -224,18 +262,22 @@ int main(int argc, char *argv[])
     double selection_sort_time;
     double insertion_sort_time;
     double heapsort_time;
+    double quicksort_time;
+
     char *word;
     char *file_text = read_file("poe-narrative-695.txt"); 
     char *words[100000];
     char *working_words[100000];
     int N = 0;
     int i;
+
     for(word = strtok(file_text, " "); word; word = strtok(NULL, " ")){
         words[N] = strdup(word);
         ++N;
     }
 
     // Setup a copy to keep the original array unsorted.
+    
     for(i = 0; i < N; ++i){
         working_words[i] = strdup(words[i]);
     }
@@ -260,8 +302,16 @@ int main(int argc, char *argv[])
     end = clock();
     heapsort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\n",
-           selection_sort_time, insertion_sort_time, heapsort_time);
+    for(i = 0; i < N; ++i){
+        working_words[i] = strdup(words[i]);
+    }
+    start = clock();
+    quicksort(working_words, 0, N - 1);
+    end = clock();
+    quicksort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
+
+    printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\nQuicksort time: %f\n",
+           selection_sort_time, insertion_sort_time, heapsort_time, quicksort_time);
 
     return 0;
 }
