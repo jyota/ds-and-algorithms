@@ -319,6 +319,7 @@ int main(int argc, char *argv[])
     selection_sort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
     for(i = 0; i < N; ++i){
+        free(working_words[i]);
         working_words[i] = strdup(words[i]);
     }
     start = clock();
@@ -327,6 +328,7 @@ int main(int argc, char *argv[])
     insertion_sort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
     for(i = 0; i < N; ++i){
+        free(working_words[i]);        
         working_words[i] = strdup(words[i]);
     }
     start = clock();
@@ -335,6 +337,7 @@ int main(int argc, char *argv[])
     heapsort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
     for(i = 0; i < N; ++i){
+        free(working_words[i]);        
         working_words[i] = strdup(words[i]);
     }
     start = clock();
@@ -343,15 +346,19 @@ int main(int argc, char *argv[])
     quicksort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
     for(i = 0; i < N; ++i){
+        free(working_words[i]);        
         working_words[i] = strdup(words[i]);
     }
     start = clock();
     my_mergesort(working_words, 0, N - 1);
     end = clock();
     mergesort_time = ((double) (end - start)) / CLOCKS_PER_SEC;
-    print_unique(working_words, N);
+
     printf("Selection sort time: %f\nInsertion sort time: %f\nHeapsort time: %f\nQuicksort time: %f\nMergesort time: %f\n",
            selection_sort_time, insertion_sort_time, heapsort_time, quicksort_time, mergesort_time);
 
+    for(i = 0; i < N; ++i){
+        free(working_words[i]);        
+    }    
     return 0;
 }
