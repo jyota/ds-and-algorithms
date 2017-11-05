@@ -9,8 +9,8 @@
 #include <assert.h>
 #include <time.h>
 
-const int max_chunks = 999;
-const int chunk_size = 500;
+const int max_chunks = 1000000;
+const int chunk_size = 10000000;
 
 int num_chunks = 0;
 
@@ -20,7 +20,7 @@ typedef struct {
 } heapnode;
 
 typedef struct {
-    heapnode q[100000];
+    heapnode q[10000];
     int n;
 } priority_queue;
 
@@ -171,9 +171,46 @@ void create_sorted_chunks(char *filename)
     }
     fclose(in);    
 }
+
+void merge_chunks(char *out_filename, int num_files)
+{
+    FILE *fp = fopen(out_filename, "w");
+    FILE *in[num_files];
+
+    char *in_filename = malloc(sizeof(char) * 12);
+    priority_queue merging_queue;
+    pq_init(&merging_queue);
+
+    int k = 0;
+
+    for(k = 0; k < num_files; ++k){
+        snprintf(in_filename, 12, "%d.sorted", k);
+        in[k] = fopen(in_filename, "r");
+    }
+
+    int i;
+    int item;    
+    for(i = 0; i < num_files; ++i){
+        if(fscanf(in[i], "%d ", &item) == 1){
+            pq_insert(&merging_queue, item, i);
+        }
+    }
+
+    while(merging_queue.n > 0){
+        heapnode minimum = extract_min(&merging_queue);
+        fprintf(fp, "%d ", minimum.value);
+        if(fscanf(in[minimum.source], "%d ", &item) == 1){
+            pq_insert(&merging_queue, item, minimum.source);
+        }else{
+            fclose(in[minimum.source]);
+        }
+    }
+    fclose(fp);
+}
  
 int main(int argc, char *argv[])
 {   
-    create_sorted_chunks("random_small.txt");
+    create_sorted_chunks("random.txt");
+    merge_chunks("random_sorted.txt", num_chunks);
     return 0;
 }
