@@ -10,7 +10,7 @@
 #include <time.h>
 
 const int max_chunks = 1000000;
-const int chunk_size = 10000000;
+const int chunk_size = 100000000;
 
 int num_chunks = 0;
 
@@ -140,15 +140,15 @@ int cmpfnc (const void *a, const void *b) {
 
 void create_sorted_chunks(char *filename)
 {
-    int arr[chunk_size];
-    char *outfilename = malloc(sizeof(char) * 12);
     int i = 0;
     int j = 0;
     int chunks_read = 0;
     FILE *in = fopen(filename, "r");
-
+    int *arr = malloc(chunk_size * sizeof(int));
+    char *outfilename = malloc(sizeof(char) * 100);
+ 
     while(j < max_chunks){
-        snprintf(outfilename, 12, "%d.sorted", num_chunks);
+   	snprintf(outfilename, 100, "%d.sorted", num_chunks);
         for(i = 0; i < chunk_size; ++i){
             if(fscanf(in, "%d ", &arr[i]) != 1){
                 break;
@@ -177,14 +177,14 @@ void merge_chunks(char *out_filename, int num_files)
     FILE *fp = fopen(out_filename, "w");
     FILE *in[num_files];
 
-    char *in_filename = malloc(sizeof(char) * 12);
+    char *in_filename = malloc(sizeof(char) * 100);
     priority_queue merging_queue;
     pq_init(&merging_queue);
 
     int k = 0;
 
     for(k = 0; k < num_files; ++k){
-        snprintf(in_filename, 12, "%d.sorted", k);
+        snprintf(in_filename, 100, "%d.sorted", k);
         in[k] = fopen(in_filename, "r");
     }
 
