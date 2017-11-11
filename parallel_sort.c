@@ -11,6 +11,7 @@
 #include <pthread.h>
 
 const int max_buffer_size = 100000000;
+const int merge_thread_depth_allowed = 8;
 
 int *mergesort_work;
 int *random_items;
@@ -80,7 +81,7 @@ void *parallel_mergesort(void *input)
 
     // Really a hybrid-parallel approach -- after going several threads in,
     // just use regular mergesort without spawning more threads. 
-    if(which->depth < 4){
+    if(which->depth < merge_thread_depth_allowed){
       ret = pthread_create(&tid1, NULL, parallel_mergesort, &left);
     }else{
       ret = pthread_create(&tid1, NULL, my_mergesort, &left);
@@ -90,7 +91,7 @@ void *parallel_mergesort(void *input)
         exit(1);
     }
 
-    if(which->depth < 4){
+    if(which->depth < merge_thread_depth_allowed){
       ret = pthread_create(&tid2, NULL, parallel_mergesort, &right);
     }else{
       ret = pthread_create(&tid2, NULL, my_mergesort, &left);
