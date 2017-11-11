@@ -10,9 +10,7 @@
 #include <time.h>
 #include <pthread.h>
 
-#define NOTHREADS 4
-
-const int max_buffer_size = 10000000;
+const int max_buffer_size = 100000000;
 
 int *mergesort_work;
 int *random_items;
@@ -20,6 +18,7 @@ int *random_items;
 typedef struct {
     int l;
     int r;
+    int depth;
 } merge_node;
 
 
@@ -42,24 +41,7 @@ void merge(int l, int m, int r)
     }
 }
 
-void my_mergesort(merge_node which)
-{
-    int m = (which.r + which.l) / 2;
-    merge_node left;
-    merge_node right;
-    left.l = which.l;
-    left.r = m;
-    right.l = m + 1;
-    right.r = which.r;
-
-    if(which.r <= which.l) return;
-
-    my_mergesort(left);
-    my_mergesort(right);
-    merge(which.l, m, which.r);
-}
-
-void parallel_mergesort(void *input)
+void *my_mergesort(void *input)
 {
     merge_node *which = (merge_node *) input;
     int m = (which->r + which->l) / 2;
@@ -69,6 +51,26 @@ void parallel_mergesort(void *input)
     left.r = m;
     right.l = m + 1;
     right.r = which->r;
+
+    if(which->r <= which->l) return;
+
+    my_mergesort(&left);
+    my_mergesort(&right);
+    merge(which->l, m, which->r);
+}
+
+void *parallel_mergesort(void *input)
+{
+    merge_node *which = (merge_node *) input;
+    int m = (which->r + which->l) / 2;
+    merge_node left;
+    merge_node right;
+    left.l = which->l;
+    left.r = m;
+    left.depth = which->depth + 1;
+    right.l = m + 1;
+    right.r = which->r;
+    right.depth = which->depth + 1;
     
     pthread_t tid1;
     pthread_t tid2;
@@ -76,15 +78,25 @@ void parallel_mergesort(void *input)
 
     if(which->r <= which->l) return;
 
-    ret = pthread_create(&tid1, NULL, parallel_mergesort, &left);
+    // Really a hybrid-parallel approach -- after going several threads in,
+    // just use regular mergesort without spawning more threads. 
+    if(which->depth < 4){
+      ret = pthread_create(&tid1, NULL, parallel_mergesort, &left);
+    }else{
+      ret = pthread_create(&tid1, NULL, my_mergesort, &left);
+    }
     if(ret){
-        printf("Unable to create thread.\n");
+	printf("%d %s - unable to create thread - ret - %d\n", __LINE__, __FUNCTION__, ret);
         exit(1);
     }
 
-    ret = pthread_create(&tid2, NULL, parallel_mergesort, &right);
+    if(which->depth < 4){
+      ret = pthread_create(&tid2, NULL, parallel_mergesort, &right);
+    }else{
+      ret = pthread_create(&tid2, NULL, my_mergesort, &left);
+    }
     if(ret){
-        printf("Unable to create thread.\n");
+	printf("%d %s - unable to create thread - ret - %d\n", __LINE__, __FUNCTION__, ret);
         exit(1);
     }
     pthread_join(tid1, NULL);
@@ -107,6 +119,7 @@ int main(int argc, char *argv[])
     merge_node initial;
     initial.l = 0;
     initial.r = max_buffer_size;
+    initial.depth = 0;
 
     srand(9999);
     
@@ -115,7 +128,7 @@ int main(int argc, char *argv[])
     }
 
     start = clock();
-    my_mergesort(initial);
+    my_mergesort(&initial);
     end = clock();
     non_parallel_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
@@ -126,17 +139,14 @@ int main(int argc, char *argv[])
     start = clock();
     ret=pthread_create(&tid, NULL, parallel_mergesort, &initial);
     if(ret){
-        printf("Unable to create thread.\n");
+	printf("%d %s - unable to create thread - ret - %d\n", __LINE__, __FUNCTION__, ret);
         exit(1);
     }
     pthread_join(tid, NULL);
     end = clock();
     parallel_time = ((double) (end - start)) / CLOCKS_PER_SEC;
 
-    for(i = 0; i < 30; ++i){
-        printf("%d\n", random_items[i]);
-    }
-    //printf("Non-parallel time to sort: %f\nParallel time to sort: %f\n", non_parallel_time, parallel_time);
+    printf("Non-parallel time to sort: %f\nParallel time to sort: %f\n", non_parallel_time, parallel_time);
 
     return 0;
 }
